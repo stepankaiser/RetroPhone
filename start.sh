@@ -3,6 +3,11 @@
 cd ~/RetroPhone
 # Audio Setup (Unmute and Max Vol)
 export AUDIODRIVER=alsa # Force ALSA for SoX/mpg123 to suppress Jack errors
+
+# Load Secrets
+set -a
+source .env
+set +a
 # Audio Setup: Try setting 'Speaker', 'PCM', and 'Headphone' (suppress errors if not found)
 # Card 0 (Jack): Usually 'Headphone' or 'PCM'
 amixer -c 0 set PCM 95% unmute >/dev/null 2>&1 || true
