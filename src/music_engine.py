@@ -34,7 +34,8 @@ class MusicEngine:
             if not os.path.exists(creds_path):
                 print("⚠️ No credentials.json found! Player might fail.")
                 
-            cache_dir = "/tmp/retro_live_cache"
+            # Cache to Disk (SD Card has 10GB free, /tmp RAM was filling up)
+            cache_dir = os.path.expanduser("~/RetroPhone/spotify_cache")
             os.system(f"mkdir -p {cache_dir}")
             if os.path.exists(creds_path):
                 os.system(f"cp {creds_path} {cache_dir}/credentials.json")
@@ -48,7 +49,7 @@ class MusicEngine:
                 "--name", device_name,
                 "--device", "plughw:0,0",
                 "--backend", "alsa",
-                "--bitrate", "160",
+                "--bitrate", "320",
                 "--cache", cache_dir,
                 "--initial-volume", "70",
                 "--zeroconf-port", "5555"
