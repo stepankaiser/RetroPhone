@@ -48,7 +48,7 @@ class MusicEngine:
                 "--name", device_name,
                 "--device", "plughw:0,0",
                 "--backend", "alsa",
-                "--bitrate", "160",
+                "--bitrate", "96",
                 "--cache", cache_dir,
                 "--initial-volume", "70",
                 "--zeroconf-port", "5555"

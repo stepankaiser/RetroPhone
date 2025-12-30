@@ -8,6 +8,9 @@ export AUDIODRIVER=alsa # Force ALSA for SoX/mpg123 to suppress Jack errors
 set -a
 source .env
 set +a
+
+# Network Boost (Attempt to disable WiFi Power Management)
+iwconfig wlan0 power off >/dev/null 2>&1 || true
 # Audio Setup: Try setting 'Speaker', 'PCM', and 'Headphone' (suppress errors if not found)
 # Card 0 (Jack): Usually 'Headphone' or 'PCM'
 amixer -c 0 set PCM 95% unmute >/dev/null 2>&1 || true
