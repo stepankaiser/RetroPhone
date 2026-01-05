@@ -1,0 +1,6 @@
+openai>=1.0.0
+elevenlabs
+spotipy
+RPi.GPIO
+requests
+python-dotenv
