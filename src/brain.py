@@ -36,7 +36,8 @@ class Brain:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": query}
                 ],
-                max_completion_tokens=150
+                max_completion_tokens=150,
+                timeout=5.0 # Prevent hanging on bad network
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -151,7 +152,8 @@ class Brain:
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": "Intro the show!"}
                 ],
-                max_completion_tokens=200
+                max_completion_tokens=200,
+                timeout=6.0
             )
             content = response.choices[0].message.content
             # Init History
@@ -204,7 +206,8 @@ class Brain:
             response = self.client.chat.completions.create(
                 model="gpt-5.2-2025-12-11",
                 messages=[{"role": "system", "content": prompt}],
-                max_completion_tokens=30
+                max_completion_tokens=30,
+                timeout=4.0
             )
             result = response.choices[0].message.content.strip()
             if "False" in result: return None
@@ -243,7 +246,8 @@ class Brain:
             response = self.client.chat.completions.create(
                 model="gpt-5.2-2025-12-11", 
                 messages=messages,
-                max_completion_tokens=150
+                max_completion_tokens=150,
+                timeout=5.0
             )
             
             reply = response.choices[0].message.content
@@ -277,9 +281,12 @@ class Brain:
             "2. If user refers to a song in context (e.g. 'Play that', 'Play the trailer'), resolve it to the full title mentioned in Context.\n"
             "3. If user explicitly asks for an ALBUM (e.g. 'Play album Abbey Road'), use 'ALBUM: Album Name Artist'.\n"
             "4. If user asks for music BY or FROM a specific artist (e.g. 'Play Bing Crosby', 'Songs from Elvis'), use 'ARTIST: Artist Name'.\n"
-            "5. If user asks for a genre, mood, or artist collection (e.g. 'Play Rock', 'Jazz music'), use 'PLAYLIST: Query'. Do NOT use 'year:XXXX' for playlists.\n"
-            "6. Limit query to 3-4 keywords.\n"
-            "7. IMPORTANT: Correct any spelling errors or typos in proper names to their canonical local form (e.g. 'Vladimir Myšík' -> 'Vladimír Mišík', 'Vteřině' -> 'Vteřiny').\n"
+            "5. If user names a famous entity without identifying type (e.g. 'Play Beatles' vs 'Play Bohemian Rhapsody'), USE YOUR WORLD KNOWLEDGE to infer if it is an ARTIST or TRACK.\n"
+            "   - 'Play Beatles' -> 'ARTIST: The Beatles'\n"
+            "   - 'Play Bohemian Rhapsody' -> 'TRACK: Bohemian Rhapsody Queen'\n"
+            "6. If user asks for a genre, mood, or artist collection (e.g. 'Play Rock', 'Jazz music'), use 'PLAYLIST: Query'. Do NOT use 'year:XXXX' for playlists.\n"
+            "7. Limit query to 3-4 keywords.\n"
+            "8. IMPORTANT: Correct any spelling errors or typos in proper names to their canonical local form (e.g. 'Vladimir Myšík' -> 'Vladimír Mišík', 'Vteřině' -> 'Vteřiny').\n"
             "Example: 'TRACK: Here in My Heart Al Martino'"
         )
         
@@ -311,16 +318,16 @@ class Brain:
             print(f"Error generating music query: {e}")
             return f"top hits {year}", "PLAYLIST"
 
-    def get_dj_confirmation(self, year, song, language="EN"):
+    def get_dj_confirmation(self, year, query, language="EN"):
         """
-        Generate a short snippet where the DJ confirms they are about to play the song.
+        Generate a short snippet where the DJ confirms and ANNOUNCES what they are about to play.
         """
         style = self.get_persona_style(year, language)
         prompt = (
             f"You are a Radio DJ from {year}. Style: {style}\n"
-            f"User wants to hear: '{song}'.\n"
-            f"Say something short (1 sentence) to confirm you are spinning it now.\n"
-            f"Example: 'Coming right up!' or 'Spinning that track just for you.'"
+            f"User request (Search Term): '{query}'.\n"
+            f"Confirm you found it and are playing it now. Mention the artist/song name clearly.\n"
+            f"Example: 'The Beatles? Excellent choice. Coming right up!' or 'Streaming that track now.'"
         )
         try:
             response = self.client.chat.completions.create(
@@ -350,7 +357,8 @@ class Brain:
                 model="gpt-5.2-2025-12-11",
                 messages=[{"role": "system", "content": prompt}],
                 max_completion_tokens=10,
-                temperature=0.0
+                temperature=0.0,
+                timeout=3.0 # Fast intent check
             )
             return response.choices[0].message.content.strip().upper()
         except:

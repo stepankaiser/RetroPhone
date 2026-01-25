@@ -104,15 +104,49 @@ def on_dial_complete(number):
                 
                 if intent == "MUSIC":
                     print("   (Operator: Music request detected...)")
-                    # Operator confirms
-                    confirm_txt = "Connecting you to that station now." if current_language == "EN" else "Přepojuji vás."
-                    audio.speak(confirm_txt, voice_id=op_voice['id'], voice_settings=op_voice['settings'], model_id=op_voice['model'])
                     
-                    # Execute Search
-                    search_query, search_type = brain.get_music_search_query(query, 1950, current_language) # Default to 1950s context for Operator
+                    # 1. GET SEARCH QUERY
+                    # Operator context is usually 1950, but for music, we might want to respect the user's era or just default.
+                    # Using 1950 for Operator persona consistency.
+                    search_query, search_type = brain.get_music_search_query(query, 1950, current_language)
+                    
                     if search_query:
+                        # 2. SMART CONFIRMATION
+                        confirm_txt = brain.get_dj_confirmation(1950, search_query, current_language)
+                        try:
+                            audio.speak(confirm_txt, voice_id=op_voice['id'], voice_settings=op_voice['settings'], model_id=op_voice['model'])
+                        except: pass
+                        
+                        # 3. CORRECTION WINDOW
+                        correction = audio.listen(duration=2.5)
+                        if correction and len(correction) > 2:
+                            negatives = ["no", "stop", "wait", "wrong", "ne", "špatně"]
+                            if any(w in correction.lower() for w in negatives):
+                                apology = "Apologies. Who did you want?" if current_language == "EN" else "Omlouvám se. Koho?"
+                                audio.speak(apology, voice_id=op_voice['id'], voice_settings=op_voice['settings'], model_id=op_voice['model'])
+                                new_q = audio.listen(duration=5)
+                                if new_q:
+                                    search_query, search_type = brain.get_music_search_query(new_q, 1950, current_language)
+                                    # Re-confirm
+                                    confirm_txt = brain.get_dj_confirmation(1950, search_query, current_language)
+                                    audio.speak(confirm_txt, voice_id=op_voice['id'], voice_settings=op_voice['settings'], model_id=op_voice['model'])
+
+                        # 4. EXECUTE PLAY
                         print(f"   (Operator Search: {search_query} | Type: {search_type})")
-                        music.search_and_play(search_query, type=search_type.lower() if search_type != "DEFAULT" else 'playlist')
+                        
+                        # Use Strict Search Logic here too? 
+                        # MusicEngine.search_and_play handles the strict formatting internally now if type is passed correctly.
+                        # We just need to map types correctly.
+                        
+                        if search_type == "TRACK":
+                            music.search_and_play(search_query, type='track')
+                        elif search_type == "ALBUM":
+                            music.search_and_play(search_query, type='album')
+                        elif search_type == "ARTIST":
+                            music.search_and_play(search_query, type='artist')
+                        else:
+                            music.search_and_play(search_query, type='playlist')
+                            
                         return # Exit Operator
                 
                 response = brain.ask_operator(query, language=current_language)
@@ -244,18 +278,48 @@ def on_dial_complete(number):
             music_started = False
             
             # 1. Smart Search (if specific request)
-            if music_query and len(music_query) > 10:
+            if music_query and len(music_query) > 2:
                 print(f"   (Detected Specific Request: '{music_query}')")
                 
-                # CONFIRMATION: Host acknowledges the request
-                confirm_txt = brain.get_dj_confirmation(target_year, music_query, current_language)
+                # A. GET SEARCH QUERY FIRST
+                search_query, search_type = brain.get_music_search_query(music_query, target_year, current_language)
+                
+                # B. GENERATE SPECIFIC CONFIRMATION (Reassuring Loop)
+                # Use the extracted query (e.g. "The Beatles") so the host sounds accurate
+                confirm_txt = brain.get_dj_confirmation(target_year, search_query or music_query, current_language)
                 try:
                     print(f"   HOST CONFIRMS: {confirm_txt}")
                     audio.speak(confirm_txt, voice_id=voice_data['id'], voice_settings=voice_data['settings'], model_id=voice_data['model'], year=target_year)
                 except Exception as e:
                     print(f"   Confirmation Error: {e}")
 
-                search_query, search_type = brain.get_music_search_query(music_query, target_year, current_language)
+                # C. CORRECTION WINDOW (Give user a chance to say "NO!")
+                # Listen briefly to see if user objects
+                correction = audio.listen(duration=2.5)
+                
+                if correction and len(correction) > 2:
+                    # quick check for negative sentiment
+                    negatives = ["no", "stop", "wait", "wrong", "not that", "change", "ne", "špatně", "počkej"]
+                    if any(w in correction.lower() for w in negatives):
+                        print(f"   (Correction Detected: '{correction}')")
+                        apology = "Apologies. Who did you want to hear?" if current_language == "EN" else "Omlouvám se. Koho chcete slyšet?"
+                        
+                        try:
+                            audio.speak(apology, voice_id=voice_data['id'], voice_settings=voice_data['settings'], model_id=voice_data['model'], year=target_year)
+                        except: pass
+                        
+                        # Listen for the correction
+                        new_query = audio.listen(duration=5)
+                        if new_query:
+                            print(f"   (New Query: '{new_query}')")
+                            music_query = new_query
+                            # Re-parse once:
+                            search_query, search_type = brain.get_music_search_query(music_query, target_year, current_language)
+                            # Re-confirm briefly
+                            confirm_txt = brain.get_dj_confirmation(target_year, search_query or music_query, current_language)
+                            try:
+                                audio.speak(confirm_txt, voice_id=voice_data['id'], voice_settings=voice_data['settings'], model_id=voice_data['model'], year=target_year)
+                            except: pass
                 
                 if search_query:
                      print(f"   (Smart Search: {search_query} | Type: {search_type})")

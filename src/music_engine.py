@@ -228,9 +228,19 @@ class MusicEngine:
         
         try:
             # SEARCH STEP (Does not need device ID usually, but good check)
-            print(f"🔎 Music Search: '{query}'")
-            results = self.sp.search(q=query, limit=1, type=type)
-        
+            print(f"🔎 Music Search: '{query}' (Type: {type})")
+            
+            # STRICT SEARCH FORMATTING
+            search_q = query
+            if type == 'artist' and 'artist:' not in query.lower():
+                search_q = f"artist:{query}"
+            elif type == 'album' and 'album:' not in query.lower():
+                search_q = f"album:{query}"
+            elif type == 'track' and 'track:' not in query.lower():
+                search_q = f"track:{query}"
+                
+            results = self.sp.search(q=search_q, limit=1, type=type)
+            
             if not results:
                 print("❌ Search returned no results.")
                 return False
