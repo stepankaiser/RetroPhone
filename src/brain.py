@@ -336,7 +336,10 @@ class Brain:
                 max_completion_tokens=50,
                 temperature=0.7
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if not content or not content.strip():
+                raise ValueError("Empty response from DJ")
+            return content
         except Exception as e:
             fallback = "Coming right up!" if language == "EN" else "Už to hraju!"
             return fallback
