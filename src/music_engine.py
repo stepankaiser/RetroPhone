@@ -261,8 +261,22 @@ class MusicEngine:
 
             if uri:
                 self.set_volume(100) # This might fail if device is dead
+                
                 if type == 'playlist' or type == 'album' or type == 'artist':
                     self.sp.start_playback(device_id=self.device_id, context_uri=uri)
+                elif type == 'track':
+                    # SMART FEATURE: "Song Radio"
+                    # Instead of just playing one song, we fetch recommendations to keep the vibe going.
+                    try:
+                        print(f"   (Fetching recommendations for Song Radio: {uri}...)")
+                        recs = self.sp.recommendations(seed_tracks=[uri], limit=20)
+                        rec_uris = [t['uri'] for t in recs['tracks']]
+                        full_queue = [uri] + rec_uris
+                        self.sp.start_playback(device_id=self.device_id, uris=full_queue)
+                        print(f"   (Queued {len(rec_uris)} similar tracks)")
+                    except Exception as e:
+                        print(f"   (Recommendation Fetch Failed: {e}. Playing single track.)")
+                        self.sp.start_playback(device_id=self.device_id, uris=[uri])
                 else:
                     self.sp.start_playback(device_id=self.device_id, uris=[uri])
                 

@@ -281,10 +281,14 @@ class Brain:
             "2. If user refers to a song in context (e.g. 'Play that', 'Play the trailer'), resolve it to the full title mentioned in Context.\n"
             "3. If user explicitly asks for an ALBUM (e.g. 'Play album Abbey Road'), use 'ALBUM: Album Name Artist'.\n"
             "4. If user asks for music BY or FROM a specific artist (e.g. 'Play Bing Crosby', 'Songs from Elvis'), use 'ARTIST: Artist Name'.\n"
+            "   - If user specifies a decade/era (e.g. 'Beatles 60s', 'Early Elvis'), append 'year:START-END'. \n"
+            "     Example: 'Play Beatles from 60s' -> 'ARTIST: The Beatles year:1960-1969'.\n"
             "5. If user names a famous entity without identifying type (e.g. 'Play Beatles' vs 'Play Bohemian Rhapsody'), USE YOUR WORLD KNOWLEDGE to infer if it is an ARTIST or TRACK.\n"
             "   - 'Play Beatles' -> 'ARTIST: The Beatles'\n"
             "   - 'Play Bohemian Rhapsody' -> 'TRACK: Bohemian Rhapsody Queen'\n"
-            "6. If user asks for a genre, mood, or artist collection (e.g. 'Play Rock', 'Jazz music'), use 'PLAYLIST: Query'. Do NOT use 'year:XXXX' for playlists.\n"
+            "6. If user asks for a genre, mood, or artist collection (e.g. 'Play Rock', 'Jazz music'), use 'PLAYLIST: Query'. \n"
+            "   - Remove the word 'playlist' from the query itself. 'Beatles playlist' -> 'PLAYLIST: The Beatles'.\n"
+            "   - Do NOT use 'year:XXXX' for playlists.\n"
             "7. Limit query to 3-4 keywords.\n"
             "8. IMPORTANT: Correct any spelling errors or typos in proper names to their canonical local form (e.g. 'Vladimir Myšík' -> 'Vladimír Mišík', 'Vteřině' -> 'Vteřiny').\n"
             "Example: 'TRACK: Here in My Heart Al Martino'"
@@ -327,7 +331,8 @@ class Brain:
             f"You are a Radio DJ from {year}. Style: {style}\n"
             f"User request (Search Term): '{query}'.\n"
             f"Confirm you found it and are playing it now. Mention the artist/song name clearly.\n"
-            f"Example: 'The Beatles? Excellent choice. Coming right up!' or 'Streaming that track now.'"
+            f"CRITICAL: If it's a song/track, mention that you'll keep the vibe going with similar tracks (Song Radio).\n"
+            f"Example: 'The Beatles? Excellent choice. I'll spin that and keep the hits coming!' or 'Streaming that track and more like it.'"
         )
         try:
             response = self.client.chat.completions.create(
