@@ -15,7 +15,7 @@ FEATURE_FLAGS = {
     "persistent_history": True,     # Remember chat history across sessions
     "local_whisper": False,         # Local Whisper as offline fallback
     "world_context": True,          # Weather + historical events in DJ prompts
-    "led_strip": True,              # WS2812B LED strip visual feedback
+    "led_strip": False,  # DISABLED: Pi 3 SPI conflicts with audio PWM              # WS2812B LED strip visual feedback
     "phonograph_mode": True,        # Local audio for pre-1930s decades
     "discover_mode": True,          # Random decade discovery (dial 99)
 }
