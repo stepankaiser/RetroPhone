@@ -15,6 +15,7 @@ Hardware mapping:
 import os
 import json
 import struct
+import time
 import threading
 import logging
 
@@ -38,48 +39,103 @@ logger = logging.getLogger(__name__)
 # Agent ID cache file
 AGENT_ID_CACHE = os.path.expanduser("~/.retro_agent_id")
 
-# Spotify tool definitions for the Conversational AI agent
-AGENT_TOOL_DEFINITIONS = [
+# Spotify tool definitions — embedded in agent.prompt.tools at creation time.
+# These tell the LLM what tools exist. ClientTools handles local execution.
+AGENT_TOOLS_CONFIG = [
     {
+        "type": "client",
         "name": "play_music",
-        "description": (
-            "Search and play music on Spotify. Use when the user asks for a "
-            "specific song, artist, album, or playlist."
-        ),
+        "description": "Search Spotify and play music. Use when the user asks for a specific song, artist, album, or genre. Always use this when the user names a song or artist.",
+        "expects_response": True,
+        "response_timeout_secs": 15,
         "parameters": {
             "type": "object",
+            "description": "Spotify search parameters",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query (artist name, song title, etc.)",
+                    "description": "What to search for (song name, artist name, album, genre, etc.)"
                 },
-                "type": {
+                "search_type": {
                     "type": "string",
-                    "enum": ["track", "artist", "album", "playlist"],
-                    "description": "Type of music to search for",
-                },
+                    "description": "Type of search",
+                    "enum": ["track", "artist", "album", "playlist"]
+                }
             },
-            "required": ["query", "type"],
-        },
+            "required": ["query", "search_type"]
+        }
     },
     {
+        "type": "client",
         "name": "play_era_playlist",
-        "description": (
-            "Play the default playlist for the current radio era/decade. "
-            "Use when user says 'play music', 'spin the records', 'yes', etc."
-        ),
+        "description": "Play the default radio playlist for the current era/decade. Use for generic music requests like 'play music', 'spin the records', 'play something', 'yes'.",
+        "expects_response": True,
+        "response_timeout_secs": 10,
         "parameters": {
             "type": "object",
-            "properties": {},
-        },
+            "description": "No parameters needed",
+            "properties": {}
+        }
     },
     {
+        "type": "client",
         "name": "pause_music",
-        "description": "Pause current music playback.",
+        "description": "Pause the currently playing music. Use when user says 'stop', 'pause', 'quiet'.",
+        "expects_response": True,
+        "response_timeout_secs": 5,
         "parameters": {
             "type": "object",
-            "properties": {},
-        },
+            "description": "No parameters needed",
+            "properties": {}
+        }
+    },
+    {
+        "type": "client",
+        "name": "now_playing",
+        "description": "Get information about what's currently playing on Spotify. Use when user asks 'what's playing?', 'who is this?', 'what song is this?'.",
+        "expects_response": True,
+        "response_timeout_secs": 5,
+        "parameters": {
+            "type": "object",
+            "description": "No parameters needed",
+            "properties": {}
+        }
+    },
+    {
+        "type": "client",
+        "name": "skip_track",
+        "description": "Skip to the next track. Use when user says 'next', 'skip', 'next song'.",
+        "expects_response": True,
+        "response_timeout_secs": 5,
+        "parameters": {
+            "type": "object",
+            "description": "No parameters needed",
+            "properties": {}
+        }
+    },
+    {
+        "type": "client",
+        "name": "get_weather",
+        "description": "Get the current weather in the listener's city. Use when user asks about weather.",
+        "expects_response": True,
+        "response_timeout_secs": 5,
+        "parameters": {
+            "type": "object",
+            "description": "No parameters needed",
+            "properties": {}
+        }
+    },
+    {
+        "type": "client",
+        "name": "get_news",
+        "description": "Get today's top news headlines. Use when user asks about news, current events, or what's happening in the world.",
+        "expects_response": True,
+        "response_timeout_secs": 5,
+        "parameters": {
+            "type": "object",
+            "description": "No parameters needed",
+            "properties": {}
+        }
     },
 ]
 
@@ -212,11 +268,12 @@ class ConversationalEngine:
     Tool calls for Spotify control are handled via ClientTools.
     """
 
-    def __init__(self, elevenlabs_api_key=None, music_engine=None):
+    def __init__(self, elevenlabs_api_key=None, music_engine=None, world_context=None):
         api_key = elevenlabs_api_key or ELEVENLABS_API_KEY
 
         self.client = ElevenLabs(api_key=api_key) if ELEVENLABS_CONV_AVAILABLE else None
         self.music_engine = music_engine
+        self.world_context = world_context
 
         self.agent_id = None
         self.conversation = None
@@ -274,9 +331,11 @@ class ConversationalEngine:
                 PromptAgentApiModelOverrideConfig,
             )
 
-            # Create agent with overrides ENABLED so we can switch prompt/first_message per decade
+            # Create agent with:
+            # 1. Spotify tool definitions (so LLM knows it can call them)
+            # 2. Override permissions (so we can swap prompt/first_message per decade)
             agent = self.client.conversational_ai.agents.create(
-                name="RetroRadio DJ",
+                name="RetroRadio DJ v3",
                 conversation_config=ConversationalConfig(
                     tts={
                         "voice_id": "JBFqnCBsd6RMkjVDRZzb",
@@ -284,8 +343,9 @@ class ConversationalEngine:
                     },
                     agent={
                         "prompt": {
-                            "prompt": "You are a retro radio DJ. Greet the listener warmly and ask what they want to hear.",
+                            "prompt": "You are a radio DJ. Help the listener find music to play.",
                             "llm": "gpt-4o",
+                            "tools": AGENT_TOOLS_CONFIG,
                         },
                         "first_message": "Welcome to RetroRadio!",
                         "language": "en",
@@ -360,20 +420,14 @@ class ConversationalEngine:
             from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
             self._audio_interface = DefaultAudioInterface()
 
-            # Register client-side tools
+            # Register ALL client-side tool handlers (must match AGENT_TOOLS_CONFIG names)
             client_tools = ClientTools()
-            client_tools.register(
-                "play_music",
-                lambda parameters: self._handle_tool_call("play_music", parameters),
-            )
-            client_tools.register(
-                "play_era_playlist",
-                lambda parameters: self._handle_tool_call("play_era_playlist", parameters),
-            )
-            client_tools.register(
-                "pause_music",
-                lambda parameters: self._handle_tool_call("pause_music", parameters),
-            )
+            for tool_def in AGENT_TOOLS_CONFIG:
+                tool_name = tool_def["name"]
+                client_tools.register(
+                    tool_name,
+                    lambda params, tn=tool_name: self._handle_tool_call(tn, params),
+                )
 
             # Build the DJ greeting
             decade = int(str(year)[:3] + "0")
@@ -413,10 +467,7 @@ class ConversationalEngine:
             # Start the session (NON-BLOCKING -- runs in background)
             self.conversation.start_session()
 
-            logger.info(
-                "Conversational session started: year=%s, voice=%s",
-                year, voice_id,
-            )
+            print(f"🎙️ ConvAI: Session started (year={year}, voice={voice_id[:12]}...)")
             return True
 
         except Exception as e:
@@ -426,11 +477,15 @@ class ConversationalEngine:
 
     def end_session(self):
         """End the current session cleanly."""
-        if self.conversation:
+        print("🎙️ ConvAI: Ending session...")
+        conv = self.conversation
+        self.conversation = None  # Mark inactive FIRST to stop hangup loop
+        if conv:
             try:
-                self.conversation.end_session()
+                conv.end_session()
+                print("🎙️ ConvAI: Session ended")
             except Exception as e:
-                logger.warning("Error ending conversation session: %s", e)
+                print(f"🎙️ ConvAI: End session error (ignored): {e}")
         self._cleanup()
 
     def wait_for_session_end(self):
@@ -463,52 +518,98 @@ class ConversationalEngine:
         Returns:
             str: Result message to send back to the agent.
         """
-        logger.info("Tool call: %s(%s)", tool_name, parameters)
+        print(f"🎙️ TOOL: {tool_name}({parameters})")
 
         if not self.music_engine:
+            print("🎙️ TOOL: Music engine not available!")
             return "Music engine not available"
 
         try:
             if tool_name == "play_music":
                 query = parameters.get("query", "")
-                search_type = parameters.get("type", "playlist")
-                success = self.music_engine.search_and_play(
-                    query, type=search_type
-                )
+                search_type = parameters.get("search_type", parameters.get("type", "track"))
+                year = self._session_year
+
+                print(f"🎙️ Spotify: Searching '{query}' as {search_type}")
+                success = self.music_engine.search_and_play(query, type=search_type, year=year)
+
                 if success:
-                    return f"Now playing: {query}"
+                    # Get track info to feed back to the DJ
+                    time.sleep(1)
+                    track = self.music_engine.current_track
+                    if track:
+                        return f"Now playing: {track.get('name', query)} by {track.get('artist', 'unknown')}. Music is coming through the speakers."
+                    return f"Now playing: {query}. Music is coming through the speakers."
                 else:
-                    return f"Could not find music matching: {query}"
+                    return f"Could not find '{query}' on Spotify. Try a different search."
 
             elif tool_name == "play_era_playlist":
                 from .config import DECADE_PLAYLISTS
 
-                decade = int(str(self._session_year)[:3] + "0")
+                decade = int(str(self._session_year)[:3] + "0") if self._session_year else 1950
                 playlists = DECADE_PLAYLISTS.get(decade)
                 if playlists:
                     lang = self._session_language or "EN"
                     uri = playlists.get(lang, playlists["EN"])
                     if uri.startswith("search:"):
-                        search_query = uri.replace("search:", "").strip()
-                        self.music_engine.search_and_play(
-                            search_query, type="playlist"
-                        )
+                        self.music_engine.search_and_play(uri.replace("search:", "").strip(), type="playlist")
                     else:
                         self.music_engine.play_playlist(uri)
-                    return "Playing era playlist"
-                else:
-                    return f"No playlist configured for decade {decade}"
+                    return f"Playing the {decade}s radio playlist. Music is coming through the speakers."
+                return "Could not find a playlist for this era."
 
             elif tool_name == "pause_music":
                 self.music_engine.pause()
-                return "Music paused"
+                return "Music paused."
+
+            elif tool_name == "now_playing":
+                try:
+                    playback = self.music_engine.sp.current_playback()
+                    if playback and playback.get("item"):
+                        item = playback["item"]
+                        name = item["name"]
+                        artist = item["artists"][0]["name"]
+                        album = item["album"]["name"]
+                        progress = playback["progress_ms"] // 1000
+                        duration = item["duration_ms"] // 1000
+                        return f"Currently playing: '{name}' by {artist} from the album '{album}'. {progress}s into {duration}s total."
+                    return "Nothing is currently playing."
+                except Exception as e:
+                    return f"Could not get playback info: {e}"
+
+            elif tool_name == "skip_track":
+                try:
+                    self.music_engine.sp.next_track(device_id=self.music_engine.device_id)
+                    time.sleep(1)
+                    track = self.music_engine.current_track
+                    if track:
+                        return f"Skipped! Now playing: {track.get('name', '?')} by {track.get('artist', '?')}."
+                    return "Skipped to the next track."
+                except Exception as e:
+                    return f"Could not skip: {e}"
+
+            elif tool_name == "get_weather":
+                if self.world_context:
+                    weather = self.world_context.get_weather()
+                    location = self.world_context.location
+                    return f"Current weather in {location}: {weather}" if weather else "Weather data not available."
+                return "Weather service not configured."
+
+            elif tool_name == "get_news":
+                if self.world_context:
+                    headlines = self.world_context.get_news(5)
+                    if headlines:
+                        news_text = "; ".join(headlines[:5])
+                        return f"Today's top headlines: {news_text}"
+                    return "No news available right now."
+                return "News service not configured."
 
             else:
                 return f"Unknown tool: {tool_name}"
 
         except Exception as e:
-            logger.error("Tool call error (%s): %s", tool_name, e)
-            return f"Error: {e}"
+            print(f"🎙️ Tool error: {e}")
+            return f"Sorry, there was a problem: {e}"
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -516,11 +617,11 @@ class ConversationalEngine:
 
     def _on_agent_response(self, text):
         """Called when the agent finishes speaking."""
-        logger.info("DJ said: %s", text)
+        print(f"🎙️ AGENT: {text}")
 
     def _on_user_transcript(self, text):
         """Called when user speech is transcribed."""
-        logger.info("User said: %s", text)
+        print(f"🎙️ USER: {text}")
 
     # ------------------------------------------------------------------
     # Cleanup

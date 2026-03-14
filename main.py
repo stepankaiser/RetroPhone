@@ -641,7 +641,7 @@ def main():
     # --- INITIALIZE CONVERSATIONAL AI ENGINE ---
     global conv_engine
     if FEATURE_FLAGS.get("conversational_ai"):
-        conv_engine = ConversationalEngine(music_engine=music)
+        conv_engine = ConversationalEngine(music_engine=music, world_context=world)
         print(f"🎙️ ConvAI: {'Available' if conv_engine.is_available() else 'Not available (missing deps)'}")
 
     # --- START PLAYBACK MONITOR ---
