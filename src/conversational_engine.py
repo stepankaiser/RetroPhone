@@ -435,6 +435,7 @@ class ConversationalEngine:
 
             # Create the Conversation instance
             self.conversation = Conversation(
+                client=self.client,
                 agent_id=agent_id,
                 audio_interface=self._audio_interface,
                 client_tools=client_tools,

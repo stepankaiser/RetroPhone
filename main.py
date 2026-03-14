@@ -142,37 +142,7 @@ def _run_conversational_session(year, language):
         voice_data = brain.get_voice_for_year(year)
         instructions = brain.build_realtime_instructions(year, language)
 
-        def handle_music(name, params):
-            if name == "play_music":
-                q = params.get("query", "")
-                t = params.get("type", "playlist")
-                success = music.search_and_play(q, type=t, year=year)
-                if success and show and FEATURE_FLAGS.get("show_mode"):
-                    if show.is_active:
-                        show.end_show()
-                    show.start_show(year, language)
-                return f"Playing: {q}" if success else "Could not find that music"
-            elif name == "play_era_playlist":
-                decade_key = int(str(year)[:3] + "0")
-                playlists = DECADE_PLAYLISTS.get(decade_key)
-                if playlists:
-                    uri = playlists.get(language, playlists["EN"])
-                    if uri.startswith("search:"):
-                        music.search_and_play(uri.replace("search:", "").strip(), type='playlist')
-                    else:
-                        music.play_playlist(uri)
-                if show and FEATURE_FLAGS.get("show_mode"):
-                    if show.is_active:
-                        show.end_show()
-                    show.start_show(year, language)
-                return "Playing era playlist"
-            elif name == "pause_music":
-                music.pause()
-                return "Music paused"
-            return "OK"
-
-        if not conv_engine.start_session(year, language, voice_data['id'],
-                                          instructions, on_tool_call=handle_music):
+        if not conv_engine.start_session(year, language, voice_data['id'], instructions):
             return False
 
         # LED: on-air indicator
