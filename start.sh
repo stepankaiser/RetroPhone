@@ -17,7 +17,9 @@ amixer -c 0 set PCM 95% unmute >/dev/null 2>&1 || true
 # Card 1 (USB Handset): 'Speaker'/'Mic'
 amixer -c 1 set Speaker 100% unmute >/dev/null 2>&1 || true
 amixer -c 1 set Headphone 100% unmute >/dev/null 2>&1 || true
-amixer -c 1 set Mic 100% unmute >/dev/null 2>&1 || true 
+# Mic: enable CAPTURE (recording) but DISABLE PLAYBACK (prevents echo loopback)
+amixer -c 1 set Mic capture 100% cap >/dev/null 2>&1 || true
+amixer -c 1 set Mic playback 0% mute >/dev/null 2>&1 || true
 amixer -c 1 set 'Auto Gain Control' on >/dev/null 2>&1 || true
 
 # Cleanup previous instances and audio zombies
