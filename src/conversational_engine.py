@@ -452,10 +452,16 @@ class ConversationalEngine:
                     lambda params, tn=tool_name: self._handle_tool_call(tn, params),
                 )
 
-            # Build the DJ greeting
+            # Build the greeting
             decade = int(str(year)[:3] + "0") if year else None
             lang_code = "cs" if language == "CZ" else "en"
-            if language == "CZ":
+            if not year:
+                # Operator — modern greeting
+                if language == "CZ":
+                    first_message = "Tady centrala. Jak vam mohu pomoci?"
+                else:
+                    first_message = "Operator here. How can I help you today?"
+            elif language == "CZ":
                 first_message = f"Vitejte v nasem radiu z roku {year}! Co pro vas mohu udelat?"
             else:
                 first_message = f"You're tuned in to {year}! What can I spin for you?"
