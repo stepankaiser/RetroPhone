@@ -250,6 +250,18 @@ class MusicEngine:
                             print(f"   (Track change callback error: {e})")
 
                     last_track_id = new_id
+
+                    # DEVICE GUARD: reclaim playback if stolen by another device
+                    active_device = playback.get('device', {}).get('name', '')
+                    if active_device and 'retro' not in active_device.lower() and self.is_playing:
+                        print(f"   ⚠️ Playback stolen by '{active_device}'! Reclaiming...")
+                        try:
+                            if self.device_id:
+                                self.sp.transfer_playback(device_id=self.device_id, force_play=True)
+                                print(f"   ✅ Playback reclaimed on RetroRadio")
+                        except Exception as e:
+                            print(f"   (Reclaim failed: {e})")
+
                 elif not playback or not playback.get('is_playing'):
                     self.is_playing = False
             except Exception as e:
