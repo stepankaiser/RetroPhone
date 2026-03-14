@@ -61,7 +61,9 @@ class EchoGateAudioInterface:
         self._inner = DefaultAudioInterface()
         self._is_outputting = False
         self._output_end_time = 0
-        self._gate_delay = 0.4  # Keep mic muted for 400ms after last output chunk
+        self._gate_delay = 1.5  # Keep mic muted for 1.5s after last output chunk
+        # The output queue adds latency — audio plays ~1-2s after output() is called,
+        # so we need a long tail to cover the actual speaker playback time
 
     def start(self, input_callback):
         """Start with a wrapped input callback that gates echo."""
@@ -86,8 +88,12 @@ class EchoGateAudioInterface:
     def output(self, audio):
         self._is_outputting = True
         self._inner.output(audio)
-        # Update end time — mic stays muted for gate_delay after this chunk
-        self._output_end_time = time.time() + self._gate_delay
+        # Estimate when this audio chunk finishes playing:
+        # Each chunk is PCM 16-bit mono at 16kHz = 2 bytes per sample
+        # So len(audio) bytes = len(audio)/2 samples = len(audio)/2/16000 seconds
+        chunk_duration = len(audio) / 2 / 16000
+        # Gate extends to: now + queue_buffer_time + chunk_play_time + safety margin
+        self._output_end_time = time.time() + chunk_duration + self._gate_delay
 
     def interrupt(self):
         self._is_outputting = False
