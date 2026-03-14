@@ -152,9 +152,14 @@ def _run_conversational_session(year, language):
         # LED: on-air indicator
         led.on_air_flash()
 
-        # Wait for hangup
-        while conv_engine.is_active() and phone and phone.is_off_hook:
-            time.sleep(0.1)
+        # Wait for hangup — poll GPIO directly (phone_interface thread may be starved by ConvAI)
+        import RPi.GPIO as GPIO
+        while conv_engine.is_active():
+            hook_val = GPIO.input(22)  # 1 = on hook, 0 = off hook
+            if hook_val == 1:
+                print("   (ConvAI: Hook-down detected via direct GPIO)")
+                break
+            time.sleep(0.2)
 
         conv_engine.end_session()
         return True
@@ -269,8 +274,14 @@ def on_dial_complete(number):
                 # year=None so Operator doesn't era-filter Spotify searches
                 if conv_engine.start_session(None, current_language, op_voice['id'], op_instructions):
                     led.on_air_flash()
-                    while conv_engine.is_active() and phone and phone.is_off_hook:
-                        time.sleep(0.1)
+                    # Poll hook directly via GPIO (phone_interface thread may be starved by ConvAI)
+                    import RPi.GPIO as GPIO
+                    while conv_engine.is_active():
+                        hook_val = GPIO.input(22)  # 1 = on hook, 0 = off hook
+                        if hook_val == 1:  # Handset replaced
+                            print("   (ConvAI: Hook-down detected via direct GPIO)")
+                            break
+                        time.sleep(0.2)
                     conv_engine.end_session()
                     return
             except Exception as e:
