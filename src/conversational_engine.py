@@ -504,9 +504,8 @@ class ConversationalEngine:
         self._session_language = language
 
         try:
-            # Use EchoGateAudioInterface — wraps DefaultAudioInterface with mic
-            # suppression during agent speech to prevent feedback loop
-            self._audio_interface = EchoGateAudioInterface()
+            from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
+            self._audio_interface = DefaultAudioInterface()
 
             # Register ALL client-side tool handlers (must match AGENT_TOOLS_CONFIG names)
             client_tools = ClientTools()
