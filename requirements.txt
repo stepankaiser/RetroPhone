@@ -1,6 +1,15 @@
 openai>=1.0.0
-elevenlabs
+elevenlabs>=2.27.0
 spotipy
 RPi.GPIO
 requests
 python-dotenv
+
+# Conversational AI (ElevenLabs handles audio I/O via PyAudio)
+pyaudio>=0.2.14
+
+# LED strip (WS2812B via SPI)
+rpi-ws281x
+
+# Optional: Local Whisper fallback (enable local_whisper flag)
+# faster-whisper>=0.10.0

@@ -1,158 +1,188 @@
-# 📞 RetroPhone: Time Travel Radio - System Documentation
+# RetroPhone: Time Travel Radio v3.0
 
-## 1. Overview
-The **RetroPhone** is an AI-powered "Time Travel Radio" built into a vintage rotary phone. It allows users to lift the handset, chat with simulated "Operator" or radio DJs from different decades (1900s-2020s), and play period-correct music via Spotify.
+An AI-powered "Time Travel Radio" built into a real 1930s rotary phone. Lift the handset, dial a decade, and talk to a live DJ from that era — then listen to the music on your home speakers.
 
-**Key Features:**
-- **Voice Interface:** Powered by OpenAI GPT-5 (Brain) and Whisper (Ear).
-- **Audio Output:** Hybrid routing (Music -> Home Audio via Jack, Voice -> Handset via USB).
-- **Physical Controls:** Rotary dial to switch "decades" (channels).
-- **Self-Healing:** Automatic service recovery and Spotify session management.
+## What It Does
 
----
+- **Dial 0**: Call the Operator (1950s switchboard style)
+- **Dial 1-8**: Jump to a decade (1910s-1980s) — DJ introduces the era, plays music
+- **Dial 1900-2030**: Exact year time travel with full DJ experience
+- **Dial 9**: Toggle English / Czech
+- **Dial 99**: Discover Mode — random decade, learns your taste
+- **Dial 666**: Timer mode (ring the bell after N minutes)
 
-## 2. Installation & Setup
+## Architecture
 
-### Prerequisites
-- Raspberry Pi 4 (Recommended) or 3B+.
-- Python 3.9+
-- Spotify Premium Account.
-- OpenAI & ElevenLabs API Keys.
+```
+HOME AUDIO (plughw:0,0 — headphone jack):    HANDSET (plughw:1,0 — USB audio):
+├── Spotify music via librespot               ├── Mic input from handset
+├── DJ breaks between songs                   ├── DJ voice during phone calls
+├── Era-specific jingles                      └── Dial tone & click sounds
+└── Phonograph playback (pre-1930s)
 
-### Installation
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/yourusername/RetroPhone.git
-    cd RetroPhone
-    ```
-
-2.  **System Dependencies**:
-    ```bash
-    sudo apt-get install -y libasound2-dev libspotify-dev sox libsox-fmt-mp3 mpg123
-    ```
-
-3.  **Python Environment**:
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-    ```
-
-4.  **Configuration**:
-    Copy the example environment file and add your keys:
-    ```bash
-    cp .env.example .env
-    nano .env
-    ```
-
-5.  **Service Deployment**:
-    ```bash
-    sudo cp retrophone.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable retrophone.service
-    sudo systemctl start retrophone.service
-    ```
-
-## 3. Hardware Configuration
-
-### Connections
-*   **Raspberry Pi 4 Model B** (Headless)
-*   **Rotary Phone Hook:**
-    *   Pin **GPIO 22** (BCM) -> Hook Switch (Normally Closed/Open logic handled in software).
-    *   **GND** -> Common Ground.
-*   **Rotary Dial:**
-    *   Pin **GPIO 27** (BCM) -> Dial Pulse Switch.
-    *   **GND** -> Common Ground.
-*   **Audio Output 1 (Music):**
-    *   **3.5mm Jack (Card 0)** -> Connected to Home Audio Receiver (Yamaha).
-    *   Volume: Line Level (95%).
-    *   ALSA Device: `plughw:0,0`
-*   **Audio Output 2 (Voice):**
-    *   **USB Audio Dongle (Card 1)** -> Inside Phone.
-    *   Output: Handset Earpiece.
-    *   Input: Handset Microphone.
-    *   ALSA Device: `plughw:1,0` (Configured in `config.py` as `AUDIO_DEVICE_ID = 1`).
-
----
-
-## 3. Software Architecture
-
-### Core Modules (`src/`)
-*   **`main.py`**: The central loop. Monitors the `PhoneInterface`. If `Off Hook` detected -> Starts `Brain` conversation. If `Dial` detected -> Switches "Channel" (Decade).
-*   **`phone_interface.py`**: A threaded hardware monitor for GPIO pins. Debounces signals and exposes `is_off_hook` logic and `dial_count`.
-*   **`brain.py`**: The Intelligence.
-    *   Uses **OpenAI GPT-5.2** for persona generation ("Operator", "1950s DJ").
-    *   Handles **Intent Classification** (Chat vs Music Request).
-    *   Generates **Spotify Search Queries** (e.g. "TRACK: song artist").
-    *   **Language Aware**: Adapts to Czech (CZ) vs English (EN) contexts, with normalization rules for spelling.
-*   **`audio_engine.py`**:
-    *   **TTS:** Uses **ElevenLabs** for high-quality voice synthesis and caches standard phrases.
-    *   **STT:** Uses **OpenAI Whisper** for transcribing user speech.
-    *   **VAD:** (Voice Activity Detection) Detects when user stops speaking using energy thresholds.
-*   **`music_engine.py`**:
-    *   Wraps **Librespot** (Embedded Spotify Client) and **Spotipy** (Web API).
-    *   **Fast Heal**: If playback fails (404), it attempts to refresh the device ID cache first.
-    *   **Full Restart**: If Fast Heal fails, it restarts the embedded player subprocess.
-    *   **Routing**: Forces music to `plughw:0,0` (Jack).
-
-### Service Management
-The application runs as a systemd service for 24/7 reliability.
-
-*   **Service File**: `/etc/systemd/system/retrophone.service`
-*   **User**: `pi`
-*   **Auto-Restart**: `Restart=always` (5s delay).
-*   **Environment**: `PYTHONUNBUFFERED=1` (for log visibility).
-*   **Logs**: `journalctl -u retrophone`
-*   **Nightly Reboot**: Cron job at 04:00 AM (`sudo systemctl restart retrophone.service`) to clear memory leaks/audio driver quirks.
-
----
-
-## 4. Configuration (`src/config.py`)
-
-*   **API Keys**: stored in `.env` (recommended) or environment variables.
-    *   `OPENAI_API_KEY`
-    *   `ELEVENLABS_API_KEY`
-    *   `SPOTIPY_CLIENT_ID` / `SPOTIPY_CLIENT_SECRET`
-*   **Audio Settings**:
-    *   `AUDIO_DEVICE_ID = 1` (USB Handset).
-    *   `DEFAULT_VOLUME = 80`.
-*   **Decade Mapping**:
-    *   Dial `1` -> 1910s ... `9` -> 1990s ... `0` -> Operator.
-
----
-
-## 5. Maintenance & Troubleshooting
-
-### Common Commands
-```bash
-# Check Status
-sudo systemctl status retrophone.service
-
-# View Logs (Live)
-journalctl -u retrophone -f
-
-# View Logs (Last 100 lines)
-journalctl -u retrophone -n 100
-
-# Restart Service
-sudo systemctl restart retrophone.service
+LED STRIP (GPIO 10 — SPI):
+├── Decade-specific color glow
+├── Pulse effect during DJ breaks
+└── On-air flash when handset lifted
 ```
 
-### Authentication (Spotify)
-If Spotify stops working (Auth Error):
-1.  Run `venv/bin/python3 tools/complete_auth.py` manually via SSH.
-2.  Follow the URL to re-authenticate.
-3.  The service will pick up the new token automatically.
+## Core Technologies
 
-### "Silent Handset"
-If the handset is silent but Music plays:
-1.  Check `start.sh` mixer settings.
-2.  Verify USB Card Index (`aplay -l`). If it moved from Card 1 to 2, update `config.py`.
+| Component | Service | Purpose |
+|-----------|---------|---------|
+| **Conversation** | ElevenLabs Conversational AI | Real-time voice chat with DJ (sub-500ms latency) |
+| **DJ Voices** | ElevenLabs TTS (14 voices) | Unique voice per decade |
+| **Intelligence** | OpenAI GPT-5.2 | Persona generation, intent classification |
+| **Speech-to-Text** | OpenAI Whisper | Voice transcription (legacy pipeline) |
+| **Music** | Spotify + Librespot | Search, playback, smart radio queues |
+| **Weather** | wttr.in | Real weather in DJ commentary |
+| **History** | Wikimedia API | "On this day" events for DJ context |
+| **Visual** | WS2812B LED strip | Decade colors, VU meter, on-air indicator |
 
-### "Wrong Music Playing"
-1.  Check `src/brain.py` debug logs.
-2.  Ensure Brain is correctly identifying the language (`User Language: CZ`).
-3.  Check if the artist spelling was corrected by the Brain's generic rule.
+## Hardware
 
----
-v1.0 - Dec 2025
+- **Raspberry Pi 3 Model B** (headless, WiFi)
+- **1930s Rotary Phone** (hook switch, rotary dial, mechanical bell)
+- **USB Audio Dongle** (inside phone — mic + earpiece)
+- **3.5mm Jack** → Home audio system
+- **WS2812B 60-LED Strip** (GPIO 10 via SPI)
+- **L298N Motor Driver** (GPIO 23+24 for mechanical bell)
+
+### GPIO Pin Map
+
+| Pin | Function |
+|-----|----------|
+| GPIO 22 | Hook switch (pull-up) |
+| GPIO 27 | Rotary dial pulse (pull-up) |
+| GPIO 23 | Bell motor IN1 |
+| GPIO 24 | Bell motor IN2 |
+| GPIO 10 | WS2812B LED data (SPI MOSI) |
+
+## Installation
+
+### Prerequisites
+- Raspberry Pi 3/4/5 with Raspberry Pi OS
+- Python 3.9+
+- Spotify Premium account
+- OpenAI API key
+- ElevenLabs API key (Starter tier or above)
+
+### Setup
+
+```bash
+# Clone
+git clone https://github.com/yourusername/RetroPhone.git
+cd RetroPhone
+
+# System dependencies
+sudo apt-get install -y libasound2-dev sox libsox-fmt-mp3 mpg123 portaudio19-dev
+
+# Enable SPI (for LED strip)
+sudo raspi-config nonint do_spi 0
+
+# Python environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Configuration
+cp .env.example .env
+nano .env  # Add your API keys
+
+# Generate AI jingles (uses ElevenLabs Sound Effects API)
+python3 tools/generate_jingles.py
+
+# Deploy as service
+sudo cp retrophone.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable retrophone.service
+sudo systemctl start retrophone.service
+```
+
+### Optional: Phonograph Mode
+For authentic pre-1930s audio, add public domain recordings to `sounds/phonograph/`. The system will play these when Spotify has limited results for early decades.
+
+## Source Modules
+
+| Module | Purpose |
+|--------|---------|
+| `main.py` | Event loop, dial routing, show orchestration |
+| `src/config.py` | All configuration: voices, personas, playlists, feature flags |
+| `src/brain.py` | LLM intelligence: DJ personas, intent classification, prompts |
+| `src/audio_engine.py` | TTS streaming, STT, sound playback, dual audio routing |
+| `src/music_engine.py` | Spotify search/play, smart radio, playback monitor |
+| `src/conversational_engine.py` | ElevenLabs Conversational AI (real-time voice) |
+| `src/show_engine.py` | Radio show lifecycle (DJ breaks, jingles, bell events) |
+| `src/world_context.py` | Weather + historical events API |
+| `src/led_engine.py` | WS2812B LED strip control |
+| `src/phone_interface.py` | GPIO: hook switch, rotary dial, bell motor |
+| `src/preferences.py` | Persistent user preferences |
+
+## Feature Flags (`src/config.py`)
+
+```python
+FEATURE_FLAGS = {
+    "streaming_tts": True,          # Stream TTS directly (no temp file)
+    "callin_greeting": True,        # DJ greets when you pick up during music
+    "playback_monitor": True,       # Track what's playing for DJ commentary
+    "dj_breaks": True,              # DJ talks between songs on home audio
+    "show_mode": True,              # Full radio show orchestration
+    "conversational_ai": True,      # ElevenLabs real-time voice (default ON)
+    "legacy_mode": False,           # Force old listen->think->speak pipeline
+    "world_context": True,          # Weather + history in DJ prompts
+    "led_strip": True,              # WS2812B LED feedback
+    "phonograph_mode": True,        # Local audio for pre-1930s
+    "discover_mode": True,          # Random decade on dial 99
+    "persistent_prefs": True,       # Remember language/decade across reboots
+    "persistent_history": True,     # DJ remembers conversations
+}
+```
+
+## 14 Unique DJ Voices
+
+Every decade has its own ElevenLabs voice and rich persona:
+
+| Decade | DJ Name | Station | Voice |
+|--------|---------|---------|-------|
+| Operator | — | — | Daniel "Steady Broadcaster" |
+| 1900s | Professor Whitmore | The Marconi Hour | Bill "Wise, Mature" |
+| 1910s | Sergeant Broadcast | Trench Radio | Harry "Fierce Warrior" |
+| 1920s | Slick Eddie | KRET Speakeasy Radio | Eric "Smooth, Trustworthy" |
+| 1930s | Silver Screen Stan | Golden Age Radio Theater | Brian "Deep, Resonant" |
+| 1940s | Captain Airwave | Armed Forces Radio | George "Warm Storyteller" |
+| 1950s | Wolfman Jack Jr. | K-R-E-T Rock Radio | Charlie "Confident, Energetic" |
+| 1960s | Sunshine Sam | Radio RETRO Pirate FM | Callum "Husky Trickster" |
+| 1970s | Smooth Barry | KRET-FM Smooth Sounds | Roger "Laid-Back, Resonant" |
+| 1980s | Thunder Mike | POWER-RET FM | Adam "Dominant, Firm" |
+| 1990s | DJ Xtreme | The Morning Zoo on KRET | Chris "Charming, Down-to-Earth" |
+| 2000s | Ryan Fresh | HitMix KRET | Jessica "Playful, Bright" |
+| 2010s | Hashtag Hannah | KRET Digital | Lily "Velvety Actress" |
+| 2020s | Vibe Check | The RETRO Pod | Laura "Enthusiast, Quirky" |
+
+## Troubleshooting
+
+```bash
+# Check status
+sudo systemctl status retrophone
+
+# Live logs
+journalctl -u retrophone -f
+
+# Restart
+sudo systemctl restart retrophone
+
+# Spotify re-auth
+cd ~/RetroPhone && source venv/bin/activate
+python3 tools/complete_auth.py
+
+# Test hardware
+python3 tools/hardware_debug.py    # GPIO pins
+python3 tools/verify_spotify.py    # Spotify connection
+python3 tools/find_audio_index.py  # Audio devices
+```
+
+## Version History
+
+- **v3.0** (Mar 2026) — ElevenLabs Conversational AI, 14 unique voices, rich personas, weather/history context, smart Spotify, LED strip, discover mode, phonograph mode, AI-generated jingles
+- **v2.0** (Mar 2026) — DJ names, streaming TTS, song-aware breaks, show mode, cross-decade handoff
+- **v1.0** (Dec 2025) — Initial release: rotary phone, decade DJs, Spotify integration

@@ -2,10 +2,11 @@ import time
 import spotipy
 import os
 import subprocess
-from spotipy.oauth2 import SpotifyOAuth
-from .config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI
-
+import shutil
 import random
+import threading
+from spotipy.oauth2 import SpotifyOAuth
+from .config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI, FEATURE_FLAGS
 
 class MusicEngine:
     def __init__(self):
@@ -19,26 +20,32 @@ class MusicEngine:
             cache_path=cache_path
         ))
         self.device_id = None
-        self.is_playing = False # Track state
+        self.is_playing = False
+
+        # Playback Monitor (Phase 3)
+        self._monitor_thread = None
+        self._monitor_running = False
+        self.current_track = None      # {id, name, artist, progress_ms, duration_ms}
+        self.on_track_change = None    # callback: fn(old_track, new_track)
 
     def start_embedded_player(self):
         """Starts the embedded librespot player as a subprocess."""
         print("🚀 Starting Embedded Librespot Player (RetroRadio)...")
         try:
             # Kill existing
-            os.system("killall librespot 2>/dev/null")
+            subprocess.run(["killall", "librespot"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             time.sleep(2)
-            
+
             # Creds
             creds_path = os.path.expanduser("~/RetroPhone/credentials.json")
             if not os.path.exists(creds_path):
                 print("⚠️ No credentials.json found! Player might fail.")
-                
+
             # Cache to Disk (SD Card has 10GB free, /tmp RAM was filling up)
             cache_dir = os.path.expanduser("~/RetroPhone/spotify_cache")
-            os.system(f"mkdir -p {cache_dir}")
+            os.makedirs(cache_dir, exist_ok=True)
             if os.path.exists(creds_path):
-                os.system(f"cp {creds_path} {cache_dir}/credentials.json")
+                shutil.copy2(creds_path, os.path.join(cache_dir, "credentials.json"))
 
             # Dynamic Name to avoid Avahi/mDNS Collisions
             device_name = f"RetroRadio-{random.randint(1000, 9999)}"
@@ -191,12 +198,77 @@ class MusicEngine:
             return True
         return False
 
+    def start_monitor(self):
+        """Start background thread monitoring Spotify playback for song transitions."""
+        if not FEATURE_FLAGS.get("playback_monitor"):
+            return
+        if self._monitor_running:
+            return
+        self._monitor_running = True
+        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._monitor_thread.start()
+        print("🎵 Playback Monitor Started")
+
+    def stop_monitor(self):
+        """Stop the playback monitor thread."""
+        self._monitor_running = False
+        print("🎵 Playback Monitor Stopped")
+
+    def _monitor_loop(self):
+        """Poll Spotify every 3 seconds, detect song transitions."""
+        last_track_id = None
+        while self._monitor_running:
+            try:
+                playback = self.sp.current_playback()
+                if playback and playback.get('is_playing') and playback.get('item'):
+                    new_id = playback['item']['id']
+                    old_track = self.current_track
+
+                    self.current_track = {
+                        'id': new_id,
+                        'name': playback['item']['name'],
+                        'artist': playback['item']['artists'][0]['name'],
+                        'album': playback['item']['album']['name'],
+                        'progress_ms': playback['progress_ms'],
+                        'duration_ms': playback['item']['duration_ms'],
+                    }
+
+                    # Fetch audio features for DJ commentary (only on track change)
+                    if last_track_id and new_id != last_track_id:
+                        features = self.get_track_features(new_id)
+                        if features:
+                            self.current_track.update(features)
+
+                    # Detect song change
+                    if last_track_id and new_id != last_track_id and self.on_track_change:
+                        try:
+                            self.on_track_change(old_track, self.current_track)
+                        except Exception as e:
+                            print(f"   (Track change callback error: {e})")
+
+                    last_track_id = new_id
+                elif not playback or not playback.get('is_playing'):
+                    self.is_playing = False
+            except Exception as e:
+                print(f"   (Monitor poll error: {e})")
+
+            time.sleep(3)
+
+    def stop(self):
+        """Stop all playback and clean up embedded player."""
+        try:
+            self.pause()
+        except Exception as e:
+            print(f"   (Stop pause error: {e})")
+        self.is_playing = False
+        subprocess.run(["killall", "librespot"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
     def set_volume(self, volume=100):
         if self.device_id:
             try:
                 self.sp.volume(volume, device_id=self.device_id)
-            except:
-                pass
+            except Exception as e:
+                print(f"   (Volume error: {e})")
 
     def play_track(self, uri, retry=True):
         if not self.device_id: self.find_device()
@@ -222,42 +294,79 @@ class MusicEngine:
             if retry and self._handle_playback_error(e):
                  self.play_playlist(playlist_uri, retry=False)
 
-    def search_and_play(self, query, type='playlist', retry=True):
-        """Search Spotify and play the first result."""
-        if not self.device_id: self.find_device()
-        
+    def get_track_features(self, track_id):
+        """Get audio features for a track (energy, tempo, valence, danceability)."""
         try:
-            # SEARCH STEP (Does not need device ID usually, but good check)
+            features = self.sp.audio_features(track_id)
+            if features and features[0]:
+                f = features[0]
+                return {
+                    "energy": f.get("energy", 0.5),
+                    "tempo": f.get("tempo", 120),
+                    "valence": f.get("valence", 0.5),
+                    "danceability": f.get("danceability", 0.5),
+                }
+        except Exception as e:
+            print(f"   (Audio features error: {e})")
+        return None
+
+    def play_local_phonograph(self, decade):
+        """Play a random local recording from the phonograph collection (pre-1930s)."""
+        import subprocess as sp_mod
+        phono_dir = os.path.expanduser("~/RetroPhone/sounds/phonograph/")
+        if not os.path.exists(phono_dir):
+            return False
+        files = [f for f in os.listdir(phono_dir) if f.endswith(('.wav', '.mp3', '.ogg'))]
+        if not files:
+            return False
+        path = os.path.join(phono_dir, random.choice(files))
+        print(f"📻 Playing phonograph: {path}")
+        if path.endswith('.mp3'):
+            sp_mod.Popen(["mpg123", "-q", "-a", "plughw:0,0", path])
+        else:
+            sp_mod.Popen(["aplay", "-q", "-D", "plughw:0,0", path])
+        self.is_playing = True
+        return True
+
+    def search_and_play(self, query, type='playlist', retry=True, year=None):
+        """Search Spotify and play the first result. Optional year for era filtering."""
+        if not self.device_id: self.find_device()
+
+        try:
             print(f"🔎 Music Search: '{query}' (Type: {type})")
-            
-            # STRICT SEARCH FORMATTING
+
+            # Era-filtered search: append year range for better results
             search_q = query
-            if type == 'artist' and 'artist:' not in query.lower():
-                search_q = f"artist:{query}"
-            elif type == 'album' and 'album:' not in query.lower():
-                search_q = f"album:{query}"
-            elif type == 'track' and 'track:' not in query.lower():
-                search_q = f"track:{query}"
-                
-            results = self.sp.search(q=search_q, limit=1, type=type)
+            if year and type in ('track', 'album') and not any(c in query for c in ['year:', 'spotify:']):
+                decade = int(str(year)[:3] + "0")
+                search_q = f"{query} year:{decade}-{decade + 9}"
+                print(f"   (Era-filtered: '{search_q}')")
+
+            results = self.sp.search(q=search_q, limit=5, type=type)
+
+            # If era-filtered search got nothing, retry without filter
+            if not results or not self._has_results(results, type):
+                if search_q != query:
+                    print("   (Era filter returned nothing, trying unfiltered...)")
+                    results = self.sp.search(q=query, limit=5, type=type)
             
-            if not results:
+            if not results or not self._has_results(results, type):
                 print("❌ Search returned no results.")
                 return False
 
             uri = None
             if type == 'playlist':
                  try: uri = results['playlists']['items'][0]['uri']
-                 except: pass
+                 except (KeyError, IndexError) as e: print(f"   (Playlist parse: {e})")
             elif type == 'track':
                  try: uri = results['tracks']['items'][0]['uri']
-                 except: pass
+                 except (KeyError, IndexError) as e: print(f"   (Track parse: {e})")
             elif type == 'album':
                  try: uri = results['albums']['items'][0]['uri']
-                 except: pass
+                 except (KeyError, IndexError) as e: print(f"   (Album parse: {e})")
             elif type == 'artist':
                  try: uri = results['artists']['items'][0]['uri']
-                 except: pass
+                 except (KeyError, IndexError) as e: print(f"   (Artist parse: {e})")
 
             if uri:
                 self.set_volume(100) # This might fail if device is dead
@@ -265,17 +374,38 @@ class MusicEngine:
                 if type == 'playlist' or type == 'album' or type == 'artist':
                     self.sp.start_playback(device_id=self.device_id, context_uri=uri)
                 elif type == 'track':
-                    # SMART FEATURE: "Song Radio"
-                    # Instead of just playing one song, we fetch recommendations to keep the vibe going.
+                    # SMART RADIO: Build queue from related artists (not just same artist)
                     try:
-                        print(f"   (Fetching recommendations for Song Radio: {uri}...)")
-                        recs = self.sp.recommendations(seed_tracks=[uri], limit=20)
-                        rec_uris = [t['uri'] for t in recs['tracks']]
-                        full_queue = [uri] + rec_uris
+                        track_info = results['tracks']['items'][0]
+                        artist_id = track_info['artists'][0]['id']
+                        artist_name = track_info['artists'][0]['name']
+                        print(f"   (Building Smart Radio from {artist_name} + related artists...)")
+
+                        # Start with this artist's top tracks
+                        top = self.sp.artist_top_tracks(artist_id)
+                        queue_uris = [uri]  # Requested track first
+                        queue_uris += [t['uri'] for t in top['tracks'] if t['uri'] != uri][:5]
+
+                        # Add tracks from related artists for variety
+                        try:
+                            related = self.sp.artist_related_artists(artist_id)
+                            for rel_artist in related['artists'][:4]:
+                                rel_top = self.sp.artist_top_tracks(rel_artist['id'])
+                                rel_uris = [t['uri'] for t in rel_top['tracks'][:3]]
+                                queue_uris.extend(rel_uris)
+                        except Exception as e:
+                            print(f"   (Related artists failed: {e})")
+
+                        # Shuffle everything after the first track
+                        first = queue_uris[0]
+                        rest = queue_uris[1:]
+                        random.shuffle(rest)
+                        full_queue = [first] + rest[:19]  # Max 20 tracks
+
                         self.sp.start_playback(device_id=self.device_id, uris=full_queue)
-                        print(f"   (Queued {len(rec_uris)} similar tracks)")
+                        print(f"   (Smart Radio: {len(full_queue)} tracks queued)")
                     except Exception as e:
-                        print(f"   (Recommendation Fetch Failed: {e}. Playing single track.)")
+                        print(f"   (Smart Radio Failed: {e}. Playing single track.)")
                         self.sp.start_playback(device_id=self.device_id, uris=[uri])
                 else:
                     self.sp.start_playback(device_id=self.device_id, uris=[uri])
@@ -290,6 +420,15 @@ class MusicEngine:
             print(f"❌ Search/Play Error: {e}")
             if retry and self._handle_playback_error(e):
                 return self.search_and_play(query, type=type, retry=False)
+            return False
+
+    def _has_results(self, results, type):
+        """Check if search results contain at least one item."""
+        key_map = {'playlist': 'playlists', 'track': 'tracks', 'album': 'albums', 'artist': 'artists'}
+        key = key_map.get(type, type + 's')
+        try:
+            return bool(results.get(key, {}).get('items'))
+        except Exception:
             return False
 
     def pause(self):

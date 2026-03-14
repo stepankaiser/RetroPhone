@@ -1,11 +1,19 @@
 from openai import OpenAI
 import random
-from .config import OPENAI_API_KEY, DECADE_VOICES, DECADE_PLAYLISTS
+import re
+import json
+import os
+from .config import OPENAI_API_KEY, DECADE_VOICES, DECADE_PLAYLISTS, DECADE_DJ_NAMES, DECADE_PERSONAS, FEATURE_FLAGS
+
+CHAT_HISTORY_DIR = os.path.expanduser("~/RetroPhone/chat_history/")
+CHAT_HISTORY_MAX_TURNS = 20
+
 
 class Brain:
     def __init__(self):
         self.client = OpenAI(api_key=OPENAI_API_KEY)
-        self.chat_history = [] # Stateful conversation memory
+        self.chat_history = []
+        self._current_history_year = None
         
         # Persona Prompts
         self.operator_prompt_en = """
@@ -51,98 +59,158 @@ class Brain:
         print(f"🧠 Selected Voice for {year}: {voice}")
         return voice
 
+    def _get_decade(self, year):
+        """Convert year to decade key."""
+        return int(str(year)[:3] + "0")
+
+    def get_persona(self, year, language="EN"):
+        """Get full persona data for a decade."""
+        decade = self._get_decade(year)
+        return DECADE_PERSONAS.get(decade, DECADE_PERSONAS.get(1950, {}))
+
     def get_persona_style(self, year, language="EN"):
-        """
-        Returns specific style/mood instructions for the given year.
-        """
-        decade = int(str(year)[:3] + "0")
-        
-        styles = {
-            1900: "Edwardian Era / Turn of the Century. Extremely formal, scientific optimism. Vocabulary: 'Splendid', 'Marvelous'.",
-            1910: "WWI Era / Industrial. Gritty but resilient. News-focused tone. 'Over there', 'The Great War'.",
-            1920: "Jazz age, energetic but polite, 'Old Sport', 'Bee's Knees'. Fast talking.",
-            1930: "Great Depression era but hopeful radio voice. Cinematic, storytelling tone.",
-            1940: "WWII/Post-War. Transatlantic accent (Mid-Atlantic). Formal, patriotic, serious but warm.",
-            1950: "Rock n Roll craze. High energy, rapid fire. Slang: 'Daddy-o', 'Cool', 'Nifty'.",
-            1960: "Counter-culture vs Pop. Example: 'Groovy', 'Far out'. smooth or very excited.",
-            1970: "Disco & Classic Rock. Laid back, chill, 'cool cat'. Smooth FM radio style.",
-            1980: "MTV generation. Hyper-energetic, maybe slightly valley girl or loud DJ. 'Radical', 'Totally'.",
-            1990: "Alternative/Pop. Casual, maybe a bit ironic or 'Morning Zoo' crew energy.",
-            2000: "Y2K Era / Millennial Pop. Tech optimism, fast-paced, 'Awesome', 'Sweet'.",
-            2010: "Social Media Age. Highly curated, energetic, 'Top 40' radio host style.",
-            2020: "Present Day. Modern slang, podcast-style conversational tone. 'Vibe', 'Trendy'.",
-        }
-        
-        style = styles.get(decade, "Standard Radio DJ. Professional and charismatic.")
-        
-        if language == "CZ":
-            # Simple mapping to Czech contexts
-            cz_styles = {
-                1900: "Rakousko-Uhersko, Belle Époque. Velmi formální, uctivá čeština. 'Císař pán', 'Pokrok'.",
-                1910: "Válečná léta a vznik Republiky. Vlastenecký, odhodlaný tón. 'Masaryk', 'Legionáři'.",
-                1920: "První republika. Spisovná čeština, uctivý tón (Oldřich Nový style).",
-                1930: "Doba filmu a swingu. Melodický hlas, elegantní vyjadřování.",
-                1940: "Válečná/Poválečná doba. Vážnější, informativní, vlastenecký tón.",
-                1950: "Budovatelské nadšení (často hrané) nebo potlačovaný jazz. Oficiální tón.",
-                1960: "Uvolnění, divadla malých forem. Hravý, inteligentní humor (Semafor style).",
-                1970: "Normalizace, ale v rádiu snaha o 'pohodu'. Klidný, uhlazený hlas.",
-                1980: "Diskotéková éra a pop. Dynamičtější, méně formální.",
-                1990: "Svoboda, divoká devadesátá. Energický, západní styl moderování. 'Nová éra'.",
-                2000: "Vstup do EU, digitální doba. Moderní, civilní projev. SuperStar éra.",
-                2010: "Doba sociálních sítí. Rychlý, 'cool' styl komerčních rádií (Evropa 2).",
-                2020: "Současnost. Autentický, podcastový styl. Uvolněná čeština.",
-            }
-            style = cz_styles.get(decade, "Standardní rádiový moderátor.")
+        """Returns style instructions for the given year."""
+        persona = self.get_persona(year, language)
+        style_key = "style_cz" if language == "CZ" else "style_en"
+        style = persona.get(style_key, persona.get("style_en", "Standard Radio DJ."))
             
         return style
 
+    def get_dj_name(self, year, language="EN"):
+        """Get the DJ name for a specific decade."""
+        decade = int(str(year)[:3] + "0")
+        names = DECADE_DJ_NAMES.get(decade, {"EN": "DJ RetroRadio", "CZ": "DJ RetroRadio"})
+        return names.get(language, names["EN"])
+
+    def get_callin_greeting(self, year, language="EN"):
+        """Get a short call-in greeting for when user lifts handset during music."""
+        dj_name = self.get_dj_name(year, language)
+        style = self.get_persona_style(year, language)
+        decade = int(str(year)[:3] + "0")
+
+        greetings_en = {
+            1900: f"Good day! You've reached {dj_name}. How may I assist you?",
+            1910: f"You're on the wire with {dj_name}! What's the word?",
+            1920: f"Well hello there, old sport! {dj_name} speaking. What'll it be?",
+            1930: f"This is {dj_name} coming at you live! What's your pleasure?",
+            1940: f"You're on the air with {dj_name}. Go ahead, caller.",
+            1950: f"Hey daddy-o! {dj_name} here. What's your request?",
+            1960: f"Far out! {dj_name} on the line. Lay it on me!",
+            1970: f"Hey cool cat, you're live with {dj_name}. What's your groove?",
+            1980: f"You're on the air with {dj_name}! What's your totally rad request?",
+            1990: f"Yo! {dj_name} here. What do you wanna hear?",
+            2000: f"Hey! You're live with {dj_name}. What's your request?",
+            2010: f"OMG you're on with {dj_name}! What are we playing?",
+            2020: f"What's up! {dj_name} here. What's the vibe?",
+        }
+        greetings_cz = {
+            1900: f"Dobry den! U aparatu {dj_name}. Cim mohu slouzit?",
+            1910: f"Tady {dj_name}! Co si prejete?",
+            1920: f"U aparatu {dj_name}. Co vam smim pustit?",
+            1930: f"Tady {dj_name}, mluvte!",
+            1940: f"Volate do studia, tady {dj_name}. Posloucham.",
+            1950: f"Ahoj! Tady {dj_name}. Co si prejete slyset?",
+            1960: f"Nazdar! {dj_name} u mikrofonu. Co zahrajeme?",
+            1970: f"Cau! Tady {dj_name}. Jaky bude vas priklad?",
+            1980: f"Jste ve vysitani s {dj_name}! Co chcete slyset?",
+            1990: f"Cus! Tady {dj_name}. Co pustíme?",
+            2000: f"Ahoj! Volate do studia {dj_name}. Jaky mate prani?",
+            2010: f"Jste na lince s {dj_name}! Co hrajeme?",
+            2020: f"Cau! Tady {dj_name}. Co je za vibe?",
+        }
+
+        greetings = greetings_cz if language == "CZ" else greetings_en
+        return greetings.get(decade, f"You're on the air with {dj_name}!")
+
+    def _save_history(self, year):
+        """Save chat history to disk for persistence across sessions."""
+        if not FEATURE_FLAGS.get("persistent_history"):
+            return
+        try:
+            os.makedirs(CHAT_HISTORY_DIR, exist_ok=True)
+            path = os.path.join(CHAT_HISTORY_DIR, f"{year}.json")
+            with open(path, 'w') as f:
+                json.dump(self.chat_history[-CHAT_HISTORY_MAX_TURNS:], f)
+        except Exception as e:
+            print(f"   (History save error: {e})")
+
+    def _load_history(self, year):
+        """Load chat history from disk."""
+        if not FEATURE_FLAGS.get("persistent_history"):
+            return []
+        try:
+            path = os.path.join(CHAT_HISTORY_DIR, f"{year}.json")
+            if os.path.exists(path):
+                with open(path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"   (History load error: {e})")
+        return []
+
     def get_host_intro(self, year, language="EN"):
         """
-        Generate a randomized intro for a specific year's radio host. 
+        Generate a randomized intro for a specific year's radio host.
         """
-        # Clear history on new intro/year change
-        self.chat_history = []
-        
-        style = self.get_persona_style(year, language)
-        
-        # RANDOMIZATION: Pick a topic to keep it fresh
-        topics_en = [
-            "breaking news headline",
-            "latest technology or invention",
-            "fashion trend or celebrity gossip",
-            "the weather and general mood in the streets",
-            "a new hit song or musical trend",
-            "a philosophical thought about this modern era"
-        ]
-        topics_cz = [
-            "hlavní zprávu dne",
-            "nejnovější technický vynález nebo trend",
-            "módu nebo drby o celebritách",
-            "počasí a náladu na ulicích",
-            "nový hudební hit nebo styl",
-            "filosofickou myšlenku o této moderní době"
-        ]
-        
-        topic = random.choice(topics_en) if language == "EN" else random.choice(topics_cz)
-        
-        if language == "EN":
-            prompt = f"""
-            You are a Radio DJ from {year}. 
-            Year: {year}.
-            **Persona/Style**: {style}
-            Context: Talk briefly about: {topic}.
-            Goal: Introduce yourself and ask the user: "Shall we spin the records, or do you want to chat more about {year}?"
-            Keep it under 3 sentences. Stay strictly in character.
-            """
+        # Load or clear history based on year change
+        if self._current_history_year != year:
+            self.chat_history = self._load_history(year)
+            self._current_history_year = year
         else:
-            prompt = f"""
-            Jste rádiový moderátor z roku {year}.
-            Rok: {year}.
-            **Styl/Osobnost**: {style}
-            Kontext: Krátce zmiňte: {topic}.
-            Cíl: Uvítejte posluchače a zeptejte se: "Mám pustit hudbu, nebo si chcete povídat o roce {year}?"
-            Max 3 věty. Držte se role.
-            """
+            self.chat_history = []
+
+        dj_name = self.get_dj_name(year, language)
+        persona = self.get_persona(year, language)
+        style = self.get_persona_style(year, language)
+        station = persona.get("station", "KRET Radio")
+        city = persona.get("city", "the studio")
+        catchphrase = persona.get("catchphrase", "")
+        world = persona.get("world", "")
+        forbidden = persona.get("forbidden", "")
+
+        # Get world context (weather + historical event) if available
+        world_ctx = ""
+        if hasattr(self, '_world_context') and self._world_context:
+            ctx = self._world_context.get_dj_context(year, language)
+            if ctx.get("weather"):
+                world_ctx += f"\nCurrent weather in the listener's city: {ctx['weather']}."
+            if ctx.get("event"):
+                world_ctx += f"\nHistorical context: {ctx['event']}."
+
+        topics_en = ["breaking news", "latest invention", "fashion or celebrity gossip",
+                      "the weather and mood in the streets", "a new hit song", "a philosophical thought"]
+        topics_cz = ["hlavni zpravu dne", "nejnovejsi vynalaz", "modu nebo drby",
+                      "pocasi a naladu na ulicich", "novy hudebni hit", "filosofickou myslenku"]
+        topic = random.choice(topics_en) if language == "EN" else random.choice(topics_cz)
+
+        if language == "EN":
+            prompt = f"""You are {dj_name}, broadcasting live on {station} from {city} in {year}.
+Year: {year}. {world}
+Your catchphrase: "{catchphrase}"
+Persona/Style: {style}
+{world_ctx}
+
+RULES:
+- You are LIVE ON AIR. Never acknowledge being AI, a simulation, or a phone system.
+- You genuinely live in {year}. {forbidden}
+- Use verbal tics, filler words, and era-appropriate slang naturally.
+
+Context: Mention {topic} briefly.
+Goal: Introduce yourself as {dj_name} on {station} and ask: "Shall we spin the records, or do you want to chat?"
+Max 3 sentences. Punchy — this is live radio."""
+        else:
+            prompt = f"""Jste {dj_name}, vysilate zive na {station} z {city} v roce {year}.
+Rok: {year}. {world}
+Vase heslo: "{catchphrase}"
+Styl: {style}
+{world_ctx}
+
+PRAVIDLA:
+- Jste V ZIVEM VYSILANI. Nikdy nezminejte AI, simulaci, ani telefonni system.
+- Zijete v roce {year}. {forbidden}
+
+Kontext: Kratce zmiňte {topic}.
+Cil: Predstavte se jako {dj_name} na {station} a zeptejte se: "Mam pustit hudbu, nebo si chcete povidat?"
+Max 3 vety. Strucne — jste v zivem vysilani."""
 
         try:
             # Fallback (which shouldn't happen now we verified the model)
@@ -165,28 +233,57 @@ class Brain:
 
     def extract_timer_duration(self, user_text):
         """
-        Extracts duration in seconds from user text using LLM.
+        Extracts duration in seconds from user text using regex.
         Returns: int (seconds) or None if invalid.
         """
-        try:
-            # Simple prompt to extract integer seconds
-            response = self.client.chat.completions.create(
-                model="gpt-5.2-2025-12-11", # Fallback to standard model
-                messages=[
-                    {"role": "system", "content": "You are a time parser. Convert the user's time request into TOTAL SECONDS. Return ONLY the integer number. If no time is found, return 0. Examples: '5 minutes' -> 300, 'one hour' -> 3600, '10 seconds' -> 10, 'Set a timer' -> 0"},
-                    {"role": "user", "content": user_text}
-                ],
-                temperature=0.0
-            )
-            val = response.choices[0].message.content.strip()
-            # Clean non-digits just in case
-            val = ''.join(filter(str.isdigit, val))
-            if not val: return None
-            seconds = int(val)
-            return seconds if seconds > 0 else None
-        except Exception as e:
-            print(f"Time Parse Error: {e}")
-            return None
+        WORD_NUMS = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+            "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
+            "forty-five": 45, "half": 0.5, "quarter": 0.25,
+            # Czech
+            "jedna": 1, "dva": 2, "tri": 3, "ctyri": 4, "pet": 5,
+            "deset": 10, "patnact": 15, "dvacet": 20, "tricet": 30,
+            "pul": 0.5,
+        }
+
+        text = user_text.lower().strip()
+        total = 0.0
+        handled = set()
+
+        # Handle "half an hour", "pul hodiny"
+        m = re.search(r'half\s+an?\s+hour|pul\s+hodin', text)
+        if m:
+            total += 1800
+            handled.add(m.span())
+
+        # Handle "a quarter hour"
+        m = re.search(r'quarter\s+(of\s+an?\s+)?hour', text)
+        if m:
+            total += 900
+            handled.add(m.span())
+
+        # Match numeric + unit patterns
+        pattern = r'(\d+(?:\.\d+)?|' + '|'.join(re.escape(w) for w in WORD_NUMS) + r')\s*(hours?|hodin[yu]?|minutes?|mins?|minut[yu]?|seconds?|secs?|sekund[yu]?|vter[iy]n[yu]?)'
+        for match in re.finditer(pattern, text):
+            # Skip if this span overlaps with a handled special case
+            if any(h[0] <= match.start() < h[1] for h in handled):
+                continue
+            val_str, unit = match.groups()
+            value = WORD_NUMS.get(val_str, None)
+            if value is None:
+                try:
+                    value = float(val_str)
+                except ValueError:
+                    continue
+            if any(u in unit for u in ['hour', 'hodin']):
+                total += value * 3600
+            elif any(u in unit for u in ['min', 'minut']):
+                total += value * 60
+            else:
+                total += value
+
+        return int(total) if total > 0 else None
 
 
     def extract_contextual_search(self, user_text, context_text, year):
@@ -216,25 +313,25 @@ class Brain:
              return None
 
     def chat_with_host(self, query, year, language="EN"):
-        """
-        Interactive chat with the Host Persona.
-        """
+        """Interactive chat with the Host Persona."""
+        dj_name = self.get_dj_name(year, language)
+        persona = self.get_persona(year, language)
         style = self.get_persona_style(year, language)
-        
+        station = persona.get("station", "KRET Radio")
+        forbidden = persona.get("forbidden", "")
+
         if language == "EN":
-            prompt = f"""
-            You are a Radio DJ from {year}. 
-            **Persona/Style**: {style}
-            Stay in character. Answer the user's question about the news, culture, or life in {year}.
-            Be concise (2 sentences).
-            """
+            prompt = f"""You are {dj_name}, broadcasting on {station} in {year}.
+Style: {style}
+You are LIVE ON AIR. Never break character. {forbidden}
+Answer the caller's question about news, culture, or life in {year}.
+Be concise (2 sentences). Use era-appropriate language."""
         else:
-            prompt = f"""
-            Jste moderátor z roku {year}.
-            **Styl/Osobnost**: {style}
-            Zůstaňte v roli. Odpovězte uživateli na dotaz ohledně zpráv, kultury nebo života v roce {year}.
-            Stručně (2 věty).
-            """
+            prompt = f"""Jste {dj_name}, vysilate na {station} v roce {year}.
+Styl: {style}
+Jste v zivem vysilani. {forbidden}
+Odpovezte volajicimu na dotaz o zprávách, kulture nebo zivote v roce {year}.
+Strucne (2 vety)."""
             
         try:
             # Construct messages with history
@@ -254,46 +351,64 @@ class Brain:
             # Update History
             self.chat_history.append({"role": "user", "content": query})
             self.chat_history.append({"role": "assistant", "content": reply})
-            
+            self._save_history(year)
+
             return reply
         except Exception as e:
              return "Signal lost..."
 
-    def get_music_search_query(self, user_text, year, language="EN"):
+    def classify_and_extract(self, user_text, year, language="EN"):
         """
-        Extracts a music search query AND type (TRACK vs PLAYLIST).
-        Uses Chat History to understand context ("Play that", "Play trailer").
+        Single GPT call that classifies intent AND extracts search query + DJ confirmation.
+        Returns: (search_query, search_type, confirmation_text)
+        - CHAT:    (None, "CHAT", None)
+        - DEFAULT: (None, "DEFAULT", None)
+        - MUSIC:   ("query", "TRACK"/"ARTIST"/"ALBUM"/"PLAYLIST", "DJ confirmation line")
         """
-        
-        # Flatten history for the music librarian prompt
+
+        # Flatten history for context
         history_text = "\\n".join([f"{m['role'].upper()}: {m['content']}" for m in self.chat_history[-4:]])
-        
+        dj_name = self.get_dj_name(year, language)
+        style = self.get_persona_style(year, language)
+
         system_prompt = (
-            f"You are a music librarian for the year {year}. "
+            f"You are {dj_name}, a music librarian AND Radio DJ for the year {year}. "
+            f"DJ Style: {style}\n"
             f"User Language: {language}.\n"
-            f"Review the recent conversation context and the user's request to extract a Spotify search query.\n"
+            f"Review the context and the user's request. First classify intent, then extract search info.\n"
             f"--- CONTEXT ---\n{history_text}\n"
             f"--- END CONTEXT ---\n"
-            "Format: 'TYPE: Query'\n"
-            "Rules:\n"
-            "0. If user says generic affirmation like 'Spin the records', 'Play music', 'Yes', 'Lets do it' -> return 'DEFAULT: None'.\n"
-            "1. If user asks for a specific song (e.g. 'Play Here in My Heart'), use 'TRACK: Song Artist year:XXXX'.\n"
+            "STEP 1 — Classify:\n"
+            "- If user is asking a question, chatting, or asking ABOUT music (not requesting playback) -> return 'CHAT: None'\n"
+            "- If user says generic affirmation like 'Spin the records', 'Play music', 'Yes', 'Lets do it' -> return 'DEFAULT: None'\n"
+            "- Otherwise, user wants music -> continue to Step 2.\n"
+            "\n"
+            "STEP 2 — Extract search query (only if music request):\n"
+            "1. If user asks for a specific song (e.g. 'Play Here in My Heart'), use 'TRACK: Song Artist'.\n"
             "2. If user refers to a song in context (e.g. 'Play that', 'Play the trailer'), resolve it to the full title mentioned in Context.\n"
             "3. If user explicitly asks for an ALBUM (e.g. 'Play album Abbey Road'), use 'ALBUM: Album Name Artist'.\n"
             "4. If user asks for music BY or FROM a specific artist (e.g. 'Play Bing Crosby', 'Songs from Elvis'), use 'ARTIST: Artist Name'.\n"
-            "   - If user specifies a decade/era (e.g. 'Beatles 60s', 'Early Elvis'), append 'year:START-END'. \n"
-            "     Example: 'Play Beatles from 60s' -> 'ARTIST: The Beatles year:1960-1969'.\n"
-            "5. If user names a famous entity without identifying type (e.g. 'Play Beatles' vs 'Play Bohemian Rhapsody'), USE YOUR WORLD KNOWLEDGE to infer if it is an ARTIST or TRACK.\n"
-            "   - 'Play Beatles' -> 'ARTIST: The Beatles'\n"
-            "   - 'Play Bohemian Rhapsody' -> 'TRACK: Bohemian Rhapsody Queen'\n"
-            "6. If user asks for a genre, mood, or artist collection (e.g. 'Play Rock', 'Jazz music'), use 'PLAYLIST: Query'. \n"
-            "   - Remove the word 'playlist' from the query itself. 'Beatles playlist' -> 'PLAYLIST: The Beatles'.\n"
-            "   - Do NOT use 'year:XXXX' for playlists.\n"
+            "5. If user names a famous entity without identifying type, USE YOUR WORLD KNOWLEDGE to infer ARTIST or TRACK.\n"
+            "   CRITICAL: If the user explicitly states a song title (e.g. 'the song called X', 'play X from Y'),\n"
+            "   you MUST use that EXACT title, even if you don't recognize it. NEVER substitute a different song.\n"
+            "   Example: 'Play Here from Mumford and Sons' -> 'TRACK: Here Mumford Sons' (NOT 'I Will Wait').\n"
+            "6. If user asks for a genre, mood, or artist collection, use 'PLAYLIST: Query'.\n"
             "7. Limit query to 3-4 keywords.\n"
-            "8. IMPORTANT: Correct any spelling errors or typos in proper names to their canonical local form (e.g. 'Vladimir Myšík' -> 'Vladimír Mišík', 'Vteřině' -> 'Vteřiny').\n"
-            "Example: 'TRACK: Here in My Heart Al Martino'"
+            "8. Correct spelling errors in proper names to their canonical form.\n"
+            "\n"
+            "STEP 3 — DJ Confirmation (only if music request):\n"
+            f"Write a 1-sentence confirmation in the DJ style of {year}. Mention the artist/song.\n"
+            "If it's a track, mention you'll keep the vibe going with similar tracks.\n"
+            "\n"
+            "OUTPUT FORMAT (exactly):\n"
+            "TYPE: Query | CONFIRM: DJ confirmation sentence\n"
+            "Examples:\n"
+            "- 'TRACK: Here Mumford Sons | CONFIRM: Mumford and Sons? I'll spin that and keep the hits coming!'\n"
+            "- 'ARTIST: The Beatles | CONFIRM: The Beatles, far out! Let me drop the needle on their grooviest cuts.'\n"
+            "- 'CHAT: None'\n"
+            "- 'DEFAULT: None'"
         )
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-5.2-2025-12-11",
@@ -301,73 +416,159 @@ class Brain:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_text}
                 ],
-                max_completion_tokens=50,
+                max_completion_tokens=80,
                 temperature=0.3
             )
             raw_result = response.choices[0].message.content.strip().replace('"', '')
-            print(f"🧠 Raw Music Algo: {raw_result}")
-            
-            # Parse
-            if ":" in raw_result:
-                parts = raw_result.split(":", 1)
-                s_type = parts[0].strip().upper()
-                s_query = parts[1].strip()
-                if "DEFAULT" in s_type:
-                    return None, "DEFAULT"
-                return s_query, s_type
-            else:
-                return raw_result, "PLAYLIST" # Default fallback for unformatted
+            print(f"🧠 Raw AI: {raw_result}")
+
+            # Parse: "TYPE: Query | CONFIRM: text" or "CHAT: None" or "DEFAULT: None"
+            if ":" not in raw_result:
+                return raw_result, "PLAYLIST", None
+
+            # Split on | to separate search from confirmation
+            confirm_text = None
+            search_part = raw_result
+            if "|" in raw_result:
+                parts = raw_result.split("|", 1)
+                search_part = parts[0].strip()
+                confirm_part = parts[1].strip()
+                if confirm_part.upper().startswith("CONFIRM:"):
+                    confirm_text = confirm_part.split(":", 1)[1].strip()
+
+            # Parse search part: "TYPE: Query"
+            type_parts = search_part.split(":", 1)
+            s_type = type_parts[0].strip().upper()
+            s_query = type_parts[1].strip() if len(type_parts) > 1 else None
+
+            if "CHAT" in s_type:
+                return None, "CHAT", None
+            if "DEFAULT" in s_type:
+                return None, "DEFAULT", None
+
+            return s_query, s_type, confirm_text
 
         except Exception as e:
-            print(f"Error generating music query: {e}")
-            return f"top hits {year}", "PLAYLIST"
+            print(f"Error in classify_and_extract: {e}")
+            return f"top hits {year}", "PLAYLIST", None
 
-    def get_dj_confirmation(self, year, query, language="EN"):
+    def generate_dj_commentary(self, previous_track, next_track, year, language="EN"):
         """
-        Generate a short snippet where the DJ confirms and ANNOUNCES what they are about to play.
+        Generate between-song DJ commentary for home audio broadcast.
+        previous_track: {name, artist, ...} | next_track: {name, artist, ...} or None
         """
+        dj_name = self.get_dj_name(year, language)
+        persona = self.get_persona(year, language)
         style = self.get_persona_style(year, language)
-        prompt = (
-            f"You are a Radio DJ from {year}. Style: {style}\n"
-            f"User request (Search Term): '{query}'.\n"
-            f"Confirm you found it and are playing it now. Mention the artist/song name clearly.\n"
-            f"CRITICAL: If it's a song/track, mention that you'll keep the vibe going with similar tracks (Song Radio).\n"
-            f"Example: 'The Beatles? Excellent choice. I'll spin that and keep the hits coming!' or 'Streaming that track and more like it.'"
-        )
+        station = persona.get("station", "KRET Radio")
+        catchphrase = persona.get("catchphrase", "")
+
+        prev_info = f'"{previous_track["name"]}" by {previous_track["artist"]}' if previous_track else "that last tune"
+        next_info = f'Coming up: "{next_track["name"]}" by {next_track["artist"]}.' if next_track else ""
+
+        # Include track features if available
+        features_info = ""
+        if previous_track and previous_track.get("energy"):
+            e = previous_track["energy"]
+            features_info = f" (Energy: {'high' if e > 0.7 else 'mellow' if e < 0.4 else 'medium'})"
+
+        if language == "EN":
+            prompt = f"""You are {dj_name} on {station}, live from {year}. Style: {style}
+You just played {prev_info}{features_info}. {next_info}
+Give a brief DJ break (1-2 sentences). Comment on the song, the artist, or drop a fun fact about {year}.
+Stay in character. Under 30 words. End with your catchphrase if it fits naturally: "{catchphrase}" """
+        else:
+            prompt = f"""Jste {dj_name} na {station}, zive z roku {year}. Styl: {style}
+Prave jste hrali {prev_info}. {next_info}
+Kratky komentar (1-2 vety). Zustaňte v roli. Max 30 slov."""
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-5.2-2025-12-11",
-                messages=[{"role": "system", "content": prompt}],
-                max_completion_tokens=50,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "DJ break!"}
+                ],
+                max_completion_tokens=60,
+                timeout=5.0,
                 temperature=0.7
             )
-            content = response.choices[0].message.content
-            if not content or not content.strip():
-                raise ValueError("Empty response from DJ")
-            return content
+            return response.choices[0].message.content
         except Exception as e:
-            fallback = "Coming right up!" if language == "EN" else "Už to hraju!"
-            return fallback
+            print(f"DJ Commentary Error: {e}")
+            return None
 
-    def classify_intent(self, user_text):
-        """
-        Determine if the user wants to CHAT, PLAY_MUSIC (explicit), or NAVIGATE.
-        """
-        prompt = (
-            f"Classify the following user input into exactly one category:\n"
-            f"1. 'MUSIC': User explicitly wants to start playing music NOW (e.g. 'Play X', 'Start music', 'I want to hear X').\n"
-            f"2. 'CHAT': User is asking a question, chatting, or asking ABOUT music (e.g. 'What is popular?', 'Who is the singer?', 'Tell me about X').\n"
-            f"user_input: '{user_text}'\n"
-            f"Return ONLY the category name."
-        )
+    def generate_handoff(self, from_year, to_year, language="EN"):
+        """Generate a cross-decade DJ handoff — previous DJ passes to next."""
+        from_dj = self.get_dj_name(from_year, language)
+        to_dj = self.get_dj_name(to_year, language)
+        from_style = self.get_persona_style(from_year, language)
+
+        if language == "EN":
+            prompt = f"""You are {from_dj}, a Radio DJ from {from_year}. Style: {from_style}
+Sign off and hand over to {to_dj} from {to_year}. One sentence. Stay in character."""
+        else:
+            prompt = f"""Jste {from_dj}, moderator z roku {from_year}. Styl: {from_style}
+Rozlucte se a predejte slovo {to_dj} z roku {to_year}. Jedna veta. Zustaňte v roli."""
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-5.2-2025-12-11",
-                messages=[{"role": "system", "content": prompt}],
-                max_completion_tokens=10,
-                temperature=0.0,
-                timeout=3.0 # Fast intent check
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "Sign off!"}
+                ],
+                max_completion_tokens=60,
+                timeout=5.0
             )
-            return response.choices[0].message.content.strip().upper()
-        except:
-             return "CHAT"
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Handoff Error: {e}")
+            return None
+
+    def set_world_context(self, world_context):
+        """Set the WorldContext instance for weather/history injection."""
+        self._world_context = world_context
+
+    def build_realtime_instructions(self, year, language="EN"):
+        """Build system instructions for ElevenLabs Conversational AI or Realtime API."""
+        dj_name = self.get_dj_name(year, language)
+        persona = self.get_persona(year, language)
+        style = self.get_persona_style(year, language)
+        station = persona.get("station", "KRET Radio")
+        city = persona.get("city", "the studio")
+        catchphrase = persona.get("catchphrase", "")
+        world = persona.get("world", "")
+        forbidden = persona.get("forbidden", "")
+        lang_name = "English" if language == "EN" else "Czech"
+
+        # Inject world context if available
+        world_ctx = ""
+        if hasattr(self, '_world_context') and self._world_context:
+            ctx = self._world_context.get_dj_context(year, language)
+            if ctx.get("weather"):
+                world_ctx += f"\nThe listener's weather right now: {ctx['weather']}. You can mention it naturally."
+            if ctx.get("event"):
+                world_ctx += f"\nFun fact for today: {ctx['event']}"
+
+        return f"""You are {dj_name}, broadcasting live on {station} from {city} in {year}.
+{world}
+Your catchphrase: "{catchphrase}"
+Style: {style}
+{world_ctx}
+
+A listener just called in on a vintage rotary telephone. You are LIVE ON AIR.
+
+RULES:
+- Never acknowledge being AI, a simulation, or a phone system. You are a REAL DJ.
+- You genuinely live in {year}. {forbidden}
+- Use era-appropriate slang, filler words, and verbal tics naturally.
+- Keep responses SHORT (1-2 sentences) — this is live radio, keep it punchy!
+- Language: {lang_name}
+
+TOOLS:
+- If they want a specific song/artist, use play_music
+- If they say "play music", "spin the records", or just want tunes, use play_era_playlist
+- If they want to pause, use pause_music
+
+Be warm, be fun, be {dj_name}. {catchphrase}"""
