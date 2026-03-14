@@ -1,5 +1,6 @@
 import time
 import threading
+import re
 import requests
 from datetime import datetime
 
@@ -17,6 +18,7 @@ class WorldContext:
 
     WEATHER_TTL = 3600       # 1 hour
     HISTORY_TTL = 86400      # 24 hours
+    NEWS_TTL = 1800          # 30 minutes
     REQUEST_TIMEOUT = 10     # seconds (Pi 3 WiFi can be slow)
 
     LANG_MAP = {
@@ -45,6 +47,7 @@ class WorldContext:
         # Cache storage
         self._weather_cache = None       # (timestamp, weather_string)
         self._history_cache = {}         # (lang, month, day) -> (timestamp, events_list)
+        self._news_cache = None          # (timestamp, list_of_headlines)
 
         # Lock for thread-safe cache access
         self._lock = threading.Lock()
@@ -98,6 +101,46 @@ class WorldContext:
         """Returns the current season name for the given month."""
         season_map = self.SEASONS.get(language, self.SEASONS["EN"])
         return season_map.get(month, "unknown")
+
+    def get_news(self, max_headlines=5):
+        """
+        Returns a list of current news headline strings.
+        Fetched from BBC World RSS. Cached for 30 minutes.
+        """
+        with self._lock:
+            if self._news_cache is not None:
+                ts, cached = self._news_cache
+                if time.time() - ts < self.NEWS_TTL:
+                    return cached[:max_headlines]
+
+        headlines = self._fetch_news()
+
+        with self._lock:
+            self._news_cache = (time.time(), headlines)
+
+        return headlines[:max_headlines]
+
+    def get_operator_context(self, language="EN"):
+        """
+        Build context for the Operator — current date, weather, and live news.
+        Unlike decade DJs, the Operator lives in the present.
+        """
+        now = datetime.now()
+        weather = self.get_weather()
+        news = self.get_news(max_headlines=5)
+
+        news_block = ""
+        if news:
+            news_lines = "\n".join(f"- {h}" for h in news)
+            news_block = f"\nToday's top news headlines:\n{news_lines}"
+
+        return {
+            "date": now.strftime("%A, %B %d, %Y"),
+            "time": now.strftime("%H:%M"),
+            "weather": weather,
+            "news": news_block,
+            "location": self.location,
+        }
 
     def get_dj_context(self, year, language="EN"):
         """
@@ -182,10 +225,32 @@ class WorldContext:
             return ""
 
         try:
-            # Target the middle of the decade (e.g. 1955 for the 1950s)
             target = decade + 5
-
             best = min(events, key=lambda e: abs(e[0] - target))
             return f"In {best[0]}: {best[1]}"
         except Exception:
             return ""
+
+    def _fetch_news(self):
+        """
+        Fetch current news headlines from BBC World RSS feed.
+        Returns list of headline strings, or [] on error.
+        No API key required.
+        """
+        try:
+            url = "https://feeds.bbci.co.uk/news/world/rss.xml"
+            resp = requests.get(url, timeout=self.REQUEST_TIMEOUT)
+            resp.raise_for_status()
+
+            # Simple XML parsing without importing xml.etree (lighter)
+            titles = re.findall(r"<title><!\[CDATA\[(.*?)\]\]></title>", resp.text)
+            if not titles:
+                # Fallback: some RSS feeds don't use CDATA
+                titles = re.findall(r"<title>(.*?)</title>", resp.text)
+
+            # Skip the first title (feed title like "BBC News - World")
+            headlines = [t.strip() for t in titles[1:] if t.strip() and "BBC" not in t]
+            return headlines[:10]
+        except Exception as e:
+            print(f"\U0001f30d WorldContext news error: {e}")
+            return []

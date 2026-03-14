@@ -258,11 +258,22 @@ def on_dial_complete(number):
         music.pause()
         audio.play_sound("click", block=True)
 
-        # Try ConvAI (Phase 11)
+        # Try ConvAI (Phase 11) — Operator gets special modern instructions
         if _use_conversational_ai():
             print("   (Using ElevenLabs ConvAI for Operator)")
-            if _run_conversational_session(1950, current_language):
-                return
+            try:
+                op_voice = DECADE_VOICES["OPERATOR"]
+                op_instructions = brain.build_operator_instructions(current_language)
+                audio.stop_audio()
+                time.sleep(0.5)
+                if conv_engine.start_session(1950, current_language, op_voice['id'], op_instructions):
+                    led.on_air_flash()
+                    while conv_engine.is_active() and phone and phone.is_off_hook:
+                        time.sleep(0.1)
+                    conv_engine.end_session()
+                    return
+            except Exception as e:
+                print(f"   (ConvAI Operator failed: {e})")
             print("   (ConvAI failed, falling back to legacy)")
 
         op_voice = DECADE_VOICES["OPERATOR"]
