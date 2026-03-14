@@ -86,67 +86,67 @@ DECADE_VOICES = {
         "model": "eleven_turbo_v2_5"
     },
     1900: {
-        "id": "pqHfZKP75CvOlQylNhV4",  # Bill — "Wise, Mature, Balanced"
-        "settings": {"stability": 0.70, "similarity_boost": 0.80, "style": 0.10},
+        "id": "s2wvuS7SwITYg8dqsJdn",  # Antonio — "Grumpy Grandpa" (20k clones!) Edwardian old-timer
+        "settings": {"stability": 0.60, "similarity_boost": 0.85, "style": 0.20},
         "model": "eleven_turbo_v2_5"
     },
     1910: {
-        "id": "SOYHLrjzK2X1ezoPC6cr",  # Harry — "Fierce Warrior"
-        "settings": {"stability": 0.30, "similarity_boost": 0.90, "style": 0.10},
-        "model": "eleven_multilingual_v2"
+        "id": "ruirxsoakN0GWmGNIo04",  # John Morgan — "Gritty Cowboy" (9k clones) WWI rugged frontier
+        "settings": {"stability": 0.35, "similarity_boost": 0.90, "style": 0.15},
+        "model": "eleven_turbo_v2_5"
     },
     1920: {
-        "id": "cjVigY5qzO86Huf0OWal",  # Eric — "Smooth, Trustworthy"
-        "settings": {"stability": 0.55, "similarity_boost": 0.80, "style": 0.20},
+        "id": "iBRcUZbbi4hxPMzDCm71",  # Grandpa Danish — "Rasped, Nostalgic" (17k clones) Speakeasy storyteller
+        "settings": {"stability": 0.50, "similarity_boost": 0.80, "style": 0.30},
         "model": "eleven_turbo_v2_5"
     },
     1930: {
-        "id": "nPczCjzI2devNBz1zQrb",  # Brian — "Deep, Resonant, Comforting"
-        "settings": {"stability": 0.65, "similarity_boost": 0.75, "style": 0.45},
+        "id": "7bkVPISi1Px9rahRsmjF",  # Retro Radio Man — "Classic Transatlantic" (1k clones) BORN for this
+        "settings": {"stability": 0.70, "similarity_boost": 0.85, "style": 0.40},
         "model": "eleven_turbo_v2_5"
     },
     1940: {
-        "id": "JBFqnCBsd6RMkjVDRZzb",  # George — "Warm, Captivating Storyteller"
-        "settings": {"stability": 0.80, "similarity_boost": 0.75, "style": 0.30},
+        "id": "NNl6r8mD7vthiJatiJt1",  # Bradford — "British Narrator, Storyteller" War correspondent
+        "settings": {"stability": 0.80, "similarity_boost": 0.80, "style": 0.30},
         "model": "eleven_turbo_v2_5"
     },
     1950: {
-        "id": "IKne3meq5aSn9XLyUdCD",  # Charlie — "Deep, Confident, Energetic"
+        "id": "IKne3meq5aSn9XLyUdCD",  # Charlie — "Deep, Confident, Energetic" Rock n roll DJ
         "settings": {"stability": 0.40, "similarity_boost": 0.75, "style": 0.70},
         "model": "eleven_turbo_v2_5"
     },
     1960: {
-        "id": "N2lVS1w4EtoT3dr4eOWO",  # Callum — "Husky Trickster"
-        "settings": {"stability": 0.25, "similarity_boost": 0.60, "style": 0.85},
+        "id": "6VgigPFWF0sNZy1BthVg",  # Captain Blackbeard — "Gritty Pirate" (1k clones) Pirate radio rebel!
+        "settings": {"stability": 0.25, "similarity_boost": 0.70, "style": 0.80},
         "model": "eleven_turbo_v2_5"
     },
     1970: {
-        "id": "CwhRBWXzGAHq8TQ4Fs17",  # Roger — "Laid-Back, Casual, Resonant"
-        "settings": {"stability": 0.80, "similarity_boost": 0.75, "style": 0.20},
+        "id": "TYkIHhDWzXPHalxGXze5",  # Chris Cerney — "1970s Gritty Retro" (2k clones) FM smooth
+        "settings": {"stability": 0.75, "similarity_boost": 0.80, "style": 0.25},
         "model": "eleven_turbo_v2_5"
     },
     1980: {
-        "id": "pNInz6obpgDQGcFmaJgB",  # Adam — "Dominant, Firm"
-        "settings": {"stability": 0.90, "similarity_boost": 0.95, "style": 0.10},
+        "id": "LG95yZDEHg6fCZdQjLqj",  # Phil — "Explosive Announcer" (13k clones!) WWE-style Voice of God
+        "settings": {"stability": 0.85, "similarity_boost": 0.95, "style": 0.15},
         "model": "eleven_turbo_v2_5"
     },
     1990: {
-        "id": "iP95p4xoKVk53GoZ742B",  # Chris — "Charming, Down-to-Earth"
+        "id": "iP95p4xoKVk53GoZ742B",  # Chris — "Charming, Down-to-Earth" Morning zoo
         "settings": {"stability": 0.50, "similarity_boost": 0.75, "style": 0.55},
         "model": "eleven_turbo_v2_5"
     },
     2000: {
-        "id": "cgSgspJ2msm6clMCkdW9",  # Jessica — "Playful, Bright, Warm"
-        "settings": {"stability": 0.65, "similarity_boost": 0.75, "style": 0.40},
+        "id": "TX3LPaxmHKxFdv7VOQHJ",  # Liam — "Energetic, Social Media Creator" Y2K energy
+        "settings": {"stability": 0.55, "similarity_boost": 0.75, "style": 0.50},
         "model": "eleven_turbo_v2_5"
     },
     2010: {
-        "id": "pFZP5JQG7iQjIQuC4Bku",  # Lily — "Velvety Actress"
-        "settings": {"stability": 0.50, "similarity_boost": 0.75, "style": 0.50},
+        "id": "EXAVITQu4vr4xnSDxMaL",  # Sarah — "Mature, Reassuring, Confident" Entertainment TV
+        "settings": {"stability": 0.55, "similarity_boost": 0.75, "style": 0.45},
         "model": "eleven_turbo_v2_5"
     },
     2020: {
-        "id": "FGY2WhTYpPnrIDTdsKH5",  # Laura — "Enthusiast, Quirky Attitude"
+        "id": "FGY2WhTYpPnrIDTdsKH5",  # Laura — "Enthusiast, Quirky Attitude" Podcast host
         "settings": {"stability": 0.40, "similarity_boost": 0.50, "style": 0.30},
         "model": "eleven_turbo_v2_5"
     },
