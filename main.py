@@ -155,7 +155,7 @@ def _run_conversational_session(year, language):
         # Wait for hangup — poll GPIO directly (phone_interface thread may be starved by ConvAI)
         # Also enforce idle timeout to prevent runaway billing
         import RPi.GPIO as GPIO
-        CONVAI_MAX_DURATION = 300  # 5 minutes max per session
+        CONVAI_MAX_DURATION = 120  # 5 minutes max per session
         session_start = time.time()
         while conv_engine.is_active():
             hook_val = GPIO.input(22)  # 1 = on hook, 0 = off hook
@@ -282,7 +282,7 @@ def on_dial_complete(number):
                     led.on_air_flash()
                     # Poll hook directly + timeout to prevent runaway billing
                     import RPi.GPIO as GPIO
-                    CONVAI_MAX_DURATION = 300  # 5 min max
+                    CONVAI_MAX_DURATION = 120  # 5 min max
                     session_start = time.time()
                     while conv_engine.is_active():
                         hook_val = GPIO.input(22)
