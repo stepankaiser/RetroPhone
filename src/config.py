@@ -153,6 +153,47 @@ DECADE_VOICES = {
 }
 
 # ============================================================
+# CLASSICAL ERA — for any dial before 1900
+# ============================================================
+CLASSICAL_VOICE = {
+    "id": "NNl6r8mD7vthiJatiJt1",  # Bradford — "British Narrator, Storyteller"
+    "settings": {"stability": 0.85, "similarity_boost": 0.85, "style": 0.20},
+    "model": "eleven_turbo_v2_5"
+}
+CLASSICAL_PERSONA = {
+    "station": "The Royal Concert Hall",
+    "city": "Vienna",
+    "dj_name": {"EN": "Maestro Bradford", "CZ": "Maestro Bradford"},
+    "catchphrase": "Exquisite. Simply exquisite.",
+    "world": "The age of great composers. Mozart, Beethoven, Bach, Chopin, Vivaldi. Music is performed in grand concert halls for royalty and the educated elite.",
+    "forbidden": "Never mention electricity, radio, recordings, or anything modern. Music is performed LIVE by orchestras.",
+    "style_en": "Extremely refined, aristocratic, hushed reverence for the music. Speak as a concert hall announcer. 'Ladies and gentlemen', 'a masterpiece', 'the maestro'.",
+    "style_cz": "Vysoce formalni, aristokraticky. Mluvte jako hlasatel v koncertnim sale.",
+}
+CLASSICAL_PLAYLISTS = {
+    "EN": "spotify:playlist:1h0CEZCm6IbFTbxThn6Xcs",  # Best Classical Music (225 tracks)
+    "CZ": "spotify:playlist:1h0CEZCm6IbFTbxThn6Xcs",
+}
+
+# ============================================================
+# OPERATOR RANDOM VOICES — picks a random era personality each call
+# ============================================================
+OPERATOR_VOICE_POOL = [
+    {"id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel", "style": "professional broadcaster"},
+    {"id": "s2wvuS7SwITYg8dqsJdn", "name": "Antonio", "style": "grumpy Italian grandpa"},
+    {"id": "7bkVPISi1Px9rahRsmjF", "name": "Retro Radio Man", "style": "classic transatlantic announcer"},
+    {"id": "6VgigPFWF0sNZy1BthVg", "name": "Captain Blackbeard", "style": "friendly pirate"},
+    {"id": "LG95yZDEHg6fCZdQjLqj", "name": "Phil", "style": "explosive wrestling announcer"},
+    {"id": "TYkIHhDWzXPHalxGXze5", "name": "Chris Cerney", "style": "1970s groovy FM host"},
+    {"id": "iBRcUZbbi4hxPMzDCm71", "name": "Grandpa Danish", "style": "rasped nostalgic storyteller"},
+    {"id": "IKne3meq5aSn9XLyUdCD", "name": "Charlie", "style": "confident energetic Australian"},
+    {"id": "vfaqCOvlrKi4Zp7C2IAm", "name": "Demon Monster", "style": "deep demonic creature"},
+    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "style": "confident TV entertainment host"},
+    {"id": "FGY2WhTYpPnrIDTdsKH5", "name": "Laura", "style": "quirky enthusiastic podcaster"},
+    {"id": "ruirxsoakN0GWmGNIo04", "name": "John Morgan", "style": "gritty Southern cowboy"},
+]
+
+# ============================================================
 # DECADE PERSONAS — Rich world-building for immersive DJ prompts
 # ============================================================
 DECADE_PERSONAS = {

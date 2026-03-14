@@ -11,7 +11,8 @@ from src.world_context import WorldContext
 from src.conversational_engine import ConversationalEngine
 from src.led_engine import LEDEngine
 from src.preferences import Preferences
-from src.config import DECADE_PLAYLISTS, DECADE_VOICES, FEATURE_FLAGS, DJ_BREAK_PROBABILITY
+from src.config import (DECADE_PLAYLISTS, DECADE_VOICES, FEATURE_FLAGS, DJ_BREAK_PROBABILITY,
+                        CLASSICAL_VOICE, CLASSICAL_PERSONA, CLASSICAL_PLAYLISTS)
 
 # Persistent Preferences
 prefs = Preferences() if FEATURE_FLAGS.get("persistent_prefs") else None
@@ -273,12 +274,13 @@ def on_dial_complete(number):
         if _use_conversational_ai():
             print("   (Using ElevenLabs ConvAI for Operator)")
             try:
-                op_voice = DECADE_VOICES["OPERATOR"]
-                op_instructions = brain.build_operator_instructions(current_language)
+                # Pick a random voice personality for the Operator
+                random_voice = brain.pick_random_operator_voice()
+                op_instructions = brain.build_operator_instructions(
+                    current_language, voice_style=random_voice["style"])
                 audio.stop_audio()
                 time.sleep(0.5)
-                # year=None so Operator doesn't era-filter Spotify searches
-                if conv_engine.start_session(None, current_language, op_voice['id'], op_instructions):
+                if conv_engine.start_session(None, current_language, random_voice['id'], op_instructions):
                     led.on_air_flash()
                     # Poll hook directly + timeout to prevent runaway billing
                     import RPi.GPIO as GPIO
@@ -375,7 +377,48 @@ def on_dial_complete(number):
     elif 1900 <= number <= 2030:
         # User dialed exact year
         target_year = number
-    
+    elif 100 <= number < 1900:
+        # Classical era — anything before 1900
+        print(f"   >>> CLASSICAL ERA ({number})")
+        current_year = number
+        led.set_decade(1900)
+
+        if _use_conversational_ai():
+            audio.play_sound("click", block=True)
+            cp = CLASSICAL_PERSONA
+            dj_name = cp["dj_name"].get(current_language, "Maestro")
+            instr = brain.build_realtime_instructions(1900, current_language)
+            # Override with classical context
+            instr = f"""You are {dj_name}, the host of {cp['station']} in {cp['city']}.
+{cp['world']}
+Your catchphrase: "{cp['catchphrase']}"
+Style: {cp['style_en' if current_language == 'EN' else 'style_cz']}
+{cp['forbidden']}
+The caller dialed year {number}. Talk about music and life around that time.
+TOOLS: Use play_music to find classical music, use play_era_playlist for a classical playlist.
+Keep responses SHORT (1-2 sentences). Language: {'English' if current_language == 'EN' else 'Czech'}."""
+
+            audio.stop_audio()
+            time.sleep(0.5)
+            if conv_engine.start_session(number, current_language, CLASSICAL_VOICE['id'], instr):
+                led.on_air_flash()
+                import RPi.GPIO as GPIO
+                CONVAI_MAX_DURATION = 120
+                session_start = time.time()
+                while conv_engine.is_active():
+                    if GPIO.input(22) == 1:
+                        print("   (ConvAI: Hook-down detected)")
+                        break
+                    if time.time() - session_start > CONVAI_MAX_DURATION:
+                        break
+                    time.sleep(0.2)
+                conv_engine.end_session()
+
+        # Play classical playlist
+        uri = CLASSICAL_PLAYLISTS.get(current_language, CLASSICAL_PLAYLISTS["EN"])
+        music.play_playlist(uri)
+        return
+
     if target_year:
         print(f"   >>> TRAVELING TO {target_year}s ({current_language})...")
 

@@ -3,7 +3,8 @@ import random
 import re
 import json
 import os
-from .config import OPENAI_API_KEY, DECADE_VOICES, DECADE_PLAYLISTS, DECADE_DJ_NAMES, DECADE_PERSONAS, FEATURE_FLAGS
+from .config import (OPENAI_API_KEY, DECADE_VOICES, DECADE_PLAYLISTS, DECADE_DJ_NAMES,
+                     DECADE_PERSONAS, FEATURE_FLAGS, OPERATOR_VOICE_POOL)
 
 CHAT_HISTORY_DIR = os.path.expanduser("~/RetroPhone/chat_history/")
 CHAT_HISTORY_MAX_TURNS = 20
@@ -523,7 +524,13 @@ Rozlucte se a predejte slovo {to_dj} z roku {to_year}. Jedna veta. Zustaňte v r
         """Set the WorldContext instance for weather/history injection."""
         self._world_context = world_context
 
-    def build_operator_instructions(self, language="EN"):
+    def pick_random_operator_voice(self):
+        """Pick a random voice from the operator pool. Returns dict with id, name, style."""
+        choice = random.choice(OPERATOR_VOICE_POOL)
+        print(f"   Operator voice: {choice['name']} ({choice['style']})")
+        return choice
+
+    def build_operator_instructions(self, language="EN", voice_style=None):
         """Build system instructions for the Operator ConvAI session — modern, news-aware."""
         lang_name = "English" if language == "EN" else "Czech"
 
@@ -538,9 +545,14 @@ CURRENT INFORMATION:
 - Weather: {op_ctx['weather']}
 {op_ctx['news']}"""
 
+        # Random voice personality twist
+        personality = ""
+        if voice_style:
+            personality = f"\nYour PERSONALITY for this call: You speak like a {voice_style}. Stay in this character throughout — it's what makes you memorable and fun!"
+
         if language == "EN":
             return f"""You are The Operator — a friendly, knowledgeable concierge for RetroPhone Time Travel Radio.
-You speak with the warmth and professionalism of a 1950s switchboard operator, but you know EVERYTHING about the modern world.
+You know EVERYTHING about the modern world.{personality}
 
 You can:
 - Answer questions about current events, news, weather, anything
