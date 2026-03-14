@@ -647,7 +647,7 @@ def main():
 
     # --- PRE-START SPOTIFY PLAYER ---
     print("Starting Spotify player...")
-    music.find_device()  # This starts librespot if no device found
+    music.find_device(force_refresh=True)  # Fresh scan, starts librespot if needed
 
     # --- START PLAYBACK MONITOR ---
     music.start_monitor()

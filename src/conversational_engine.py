@@ -453,7 +453,7 @@ class ConversationalEngine:
                 )
 
             # Build the DJ greeting
-            decade = int(str(year)[:3] + "0")
+            decade = int(str(year)[:3] + "0") if year else None
             lang_code = "cs" if language == "CZ" else "en"
             if language == "CZ":
                 first_message = f"Vitejte v nasem radiu z roku {year}! Co pro vas mohu udelat?"
