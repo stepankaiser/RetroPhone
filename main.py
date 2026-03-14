@@ -266,7 +266,8 @@ def on_dial_complete(number):
                 op_instructions = brain.build_operator_instructions(current_language)
                 audio.stop_audio()
                 time.sleep(0.5)
-                if conv_engine.start_session(1950, current_language, op_voice['id'], op_instructions):
+                # year=None so Operator doesn't era-filter Spotify searches
+                if conv_engine.start_session(None, current_language, op_voice['id'], op_instructions):
                     led.on_air_flash()
                     while conv_engine.is_active() and phone and phone.is_off_hook:
                         time.sleep(0.1)
@@ -643,6 +644,10 @@ def main():
     if FEATURE_FLAGS.get("conversational_ai"):
         conv_engine = ConversationalEngine(music_engine=music, world_context=world)
         print(f"🎙️ ConvAI: {'Available' if conv_engine.is_available() else 'Not available (missing deps)'}")
+
+    # --- PRE-START SPOTIFY PLAYER ---
+    print("Starting Spotify player...")
+    music.find_device()  # This starts librespot if no device found
 
     # --- START PLAYBACK MONITOR ---
     music.start_monitor()
