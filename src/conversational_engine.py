@@ -39,6 +39,62 @@ logger = logging.getLogger(__name__)
 # Agent ID cache file
 AGENT_ID_CACHE = os.path.expanduser("~/.retro_agent_id")
 
+
+# ---------------------------------------------------------------------------
+# EchoGateAudioInterface — prevents feedback loop in handset
+# ---------------------------------------------------------------------------
+
+class EchoGateAudioInterface:
+    """
+    Wraps DefaultAudioInterface with echo suppression.
+
+    The old phone handset has the mic and speaker very close together.
+    When the agent speaks, the mic picks up the audio and feeds it back,
+    creating an infinite echo loop ("Ahoy!" → mic hears "Ahoy!" → repeats).
+
+    Fix: suppress mic input for a short window after each audio output chunk.
+    This is a simple "echo gate" — mic is muted while speaker is active.
+    """
+
+    def __init__(self):
+        from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
+        self._inner = DefaultAudioInterface()
+        self._is_outputting = False
+        self._output_end_time = 0
+        self._gate_delay = 0.4  # Keep mic muted for 400ms after last output chunk
+
+    def start(self, input_callback):
+        """Start with a wrapped input callback that gates echo."""
+        self._real_callback = input_callback
+
+        def gated_callback(audio_data):
+            # Suppress mic input while agent is speaking (+ gate_delay after)
+            now = time.time()
+            if now < self._output_end_time:
+                # Send silence instead of actual mic data to prevent echo
+                silence = b'\x00' * len(audio_data)
+                self._real_callback(silence)
+            else:
+                self._is_outputting = False
+                self._real_callback(audio_data)
+
+        self._inner.start(gated_callback)
+
+    def stop(self):
+        self._inner.stop()
+
+    def output(self, audio):
+        self._is_outputting = True
+        self._inner.output(audio)
+        # Update end time — mic stays muted for gate_delay after this chunk
+        self._output_end_time = time.time() + self._gate_delay
+
+    def interrupt(self):
+        self._is_outputting = False
+        self._output_end_time = 0  # Immediately unmute mic on interruption
+        self._inner.interrupt()
+
+
 # Spotify tool definitions — embedded in agent.prompt.tools at creation time.
 # These tell the LLM what tools exist. ClientTools handles local execution.
 AGENT_TOOLS_CONFIG = [
@@ -442,10 +498,9 @@ class ConversationalEngine:
         self._session_language = language
 
         try:
-            # Use DefaultAudioInterface — ALSA .asoundrc routes default to USB card
-            # with plug layer handling 16kHz<->44100Hz resampling automatically
-            from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
-            self._audio_interface = DefaultAudioInterface()
+            # Use EchoGateAudioInterface — wraps DefaultAudioInterface with mic
+            # suppression during agent speech to prevent feedback loop
+            self._audio_interface = EchoGateAudioInterface()
 
             # Register ALL client-side tool handlers (must match AGENT_TOOLS_CONFIG names)
             client_tools = ClientTools()
