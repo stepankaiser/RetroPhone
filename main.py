@@ -419,6 +419,14 @@ Keep responses SHORT (1-2 sentences). Language: {'English' if current_language =
         music.play_playlist(uri)
         return
 
+    if not target_year:
+        # Unrecognized number — give feedback
+        print(f"   (Unrecognized dial: {number})")
+        op_voice = DECADE_VOICES["OPERATOR"]
+        msg = f"Sorry, I don't recognize number {number}. Dial 0 for operator, 1 through 8 for decades, or a year like 1955." if current_language == "EN" else f"Cislo {number} neznam. Vytocte 0 pro centralu, 1 az 8 pro dekady, nebo rok jako 1955."
+        audio.speak(msg, voice_id=op_voice['id'], voice_settings=op_voice['settings'], model_id=op_voice['model'])
+        return
+
     if target_year:
         print(f"   >>> TRAVELING TO {target_year}s ({current_language})...")
 
