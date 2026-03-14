@@ -120,9 +120,9 @@ def on_hook_change(is_off_hook):
         print("\n📞 HANDSET REPLACED")
         print("   (Silencing handset...)")
         audio.stop_audio()
-        # End ConvAI session if active
+        # End ConvAI session if active (do it in a thread to avoid deadlock)
         if conv_engine and conv_engine.is_active():
-            conv_engine.end_session()
+            threading.Thread(target=conv_engine.end_session, daemon=True).start()
         # Restore decade LED color (stop on-air flash)
         if current_year:
             led.set_decade(current_year)
