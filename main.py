@@ -142,6 +142,10 @@ def _run_conversational_session(year, language):
         voice_data = brain.get_voice_for_year(year)
         instructions = brain.build_realtime_instructions(year, language)
 
+        # CRITICAL: Release the ALSA device so ConvAI can open it
+        audio.stop_audio()
+        time.sleep(0.5)
+
         if not conv_engine.start_session(year, language, voice_data['id'], instructions):
             return False
 
@@ -252,12 +256,9 @@ def on_dial_complete(number):
     if number == 0:
         print("   >>> CONNECTING TO OPERATOR...")
         music.pause()
+        audio.play_sound("click", block=True)
 
-        audio.play_sound("dial_tone")
-        time.sleep(1)
-        audio.play_sound("click")
-
-        # Try Realtime API first (Phase 5)
+        # Try ConvAI (Phase 11)
         if _use_conversational_ai():
             print("   (Using ElevenLabs ConvAI for Operator)")
             if _run_conversational_session(1950, current_language):

@@ -93,71 +93,57 @@ class HandsetAudioInterface(AudioInterface if ELEVENLABS_CONV_AVAILABLE else obj
     Custom AudioInterface that routes audio through the USB audio device
     (phone handset) on the Raspberry Pi.
 
-    - Mic input:  read from USB device (card 1) at 16kHz mono float32
-    - Speaker output: write to USB device (card 1) at 16kHz mono float32
+    Mirrors DefaultAudioInterface exactly but targets USB device (card 1).
+    ElevenLabs ConvAI expects: paInt16, 16kHz, mono.
+    The USB device runs at 44100Hz natively — PyAudio/ALSA handles resampling.
     """
 
-    SAMPLE_RATE = 16000
-    CHANNELS = 1
-    FORMAT = pyaudio.paFloat32 if PYAUDIO_AVAILABLE else None
-    CHUNK_SIZE = 800  # 50ms at 16kHz
+    INPUT_FRAMES_PER_BUFFER = 4000   # 250ms @ 16kHz
+    OUTPUT_FRAMES_PER_BUFFER = 1000  # 62.5ms @ 16kHz
 
     def __init__(self):
-        self._pa = None
-        self._input_stream = None
-        self._output_stream = None
-        self._input_callback = None
-        self._running = False
-        self._read_thread = None
-
-    def start(self, input_callback):
-        """
-        Start audio capture and playback.
-
-        Args:
-            input_callback: Callable that receives mic audio data (bytes).
-                            Called repeatedly with float32 PCM chunks.
-        """
         if not PYAUDIO_AVAILABLE:
             raise RuntimeError("PyAudio is not installed")
+        self._pyaudio_module = pyaudio
 
-        self._input_callback = input_callback
-        self._pa = pyaudio.PyAudio()
-        self._running = True
+    def start(self, input_callback):
+        """Start audio capture and playback on USB handset."""
+        import queue as queue_mod
+        self.input_callback = input_callback
+        self.output_queue = queue_mod.Queue()
+        self.should_stop = threading.Event()
+        self.output_thread = threading.Thread(target=self._output_thread)
 
-        input_idx = self._find_usb_device(is_input=True)
-        output_idx = self._find_usb_device(is_input=False)
+        self.p = self._pyaudio_module.PyAudio()
 
-        logger.info(
-            "HandsetAudio: input_device=%s, output_device=%s",
-            input_idx, output_idx,
-        )
+        # Find USB audio device
+        usb_idx = self._find_usb_device()
+        logger.info("HandsetAudio: using device index %s", usb_idx)
 
-        # Input stream (mic)
-        self._input_stream = self._pa.open(
-            format=self.FORMAT,
-            channels=self.CHANNELS,
-            rate=self.SAMPLE_RATE,
+        # Input stream — use callback mode like DefaultAudioInterface
+        self.in_stream = self.p.open(
+            format=self._pyaudio_module.paInt16,
+            channels=1,
+            rate=16000,
             input=True,
-            input_device_index=input_idx,
-            frames_per_buffer=self.CHUNK_SIZE,
+            input_device_index=usb_idx,
+            stream_callback=self._in_callback,
+            frames_per_buffer=self.INPUT_FRAMES_PER_BUFFER,
+            start=True,
         )
 
-        # Output stream (handset speaker)
-        self._output_stream = self._pa.open(
-            format=self.FORMAT,
-            channels=self.CHANNELS,
-            rate=self.SAMPLE_RATE,
+        # Output stream
+        self.out_stream = self.p.open(
+            format=self._pyaudio_module.paInt16,
+            channels=1,
+            rate=16000,
             output=True,
-            output_device_index=output_idx,
-            frames_per_buffer=self.CHUNK_SIZE,
+            output_device_index=usb_idx,
+            frames_per_buffer=self.OUTPUT_FRAMES_PER_BUFFER,
+            start=True,
         )
 
-        # Read mic in a background thread and feed to callback
-        self._read_thread = threading.Thread(
-            target=self._mic_read_loop, daemon=True
-        )
-        self._read_thread.start()
+        self.output_thread.start()
 
     def stop(self):
         """Stop audio streams and release resources."""
@@ -167,83 +153,49 @@ class HandsetAudioInterface(AudioInterface if ELEVENLABS_CONV_AVAILABLE else obj
             self._read_thread.join(timeout=2.0)
             self._read_thread = None
 
-        for stream in (self._input_stream, self._output_stream):
-            if stream:
-                try:
-                    stream.stop_stream()
-                    stream.close()
-                except Exception:
-                    pass
-        self._input_stream = None
-        self._output_stream = None
+    def stop(self):
+        """Stop audio streams and clean up."""
+        self.should_stop.set()
+        self.output_thread.join()
+        self.in_stream.stop_stream()
+        self.in_stream.close()
+        self.out_stream.close()
+        self.p.terminate()
 
-        if self._pa:
-            try:
-                self._pa.terminate()
-            except Exception:
-                pass
-            self._pa = None
-
-    def output(self, audio_data):
-        """
-        Write agent audio response to the handset speaker.
-
-        Args:
-            audio_data: bytes of float32 PCM audio at 16kHz mono.
-        """
-        if self._output_stream and self._running:
-            try:
-                self._output_stream.write(audio_data)
-            except Exception as e:
-                logger.warning("HandsetAudio output error: %s", e)
+    def output(self, audio: bytes):
+        """Buffer agent audio for playback."""
+        self.output_queue.put(audio)
 
     def interrupt(self):
-        """
-        Called when the user interrupts the agent (barge-in).
-        Flush any buffered output audio.
-        """
-        if self._output_stream and self._running:
-            try:
-                # Stop and restart the output stream to clear its buffer
-                self._output_stream.stop_stream()
-                self._output_stream.start_stream()
-            except Exception as e:
-                logger.warning("HandsetAudio interrupt error: %s", e)
+        """Clear output buffer (user is interrupting the agent)."""
+        try:
+            while True:
+                _ = self.output_queue.get(block=False)
+        except Exception:
+            pass
 
-    def _mic_read_loop(self):
-        """Continuously read mic data and pass to input_callback."""
-        while self._running and self._input_stream:
+    def _output_thread(self):
+        """Background thread that writes buffered audio to the speaker."""
+        while not self.should_stop.is_set():
             try:
-                data = self._input_stream.read(
-                    self.CHUNK_SIZE, exception_on_overflow=False
-                )
-                if self._input_callback and data:
-                    self._input_callback(data)
-            except Exception as e:
-                if self._running:
-                    logger.warning("HandsetAudio mic read error: %s", e)
-                break
+                audio = self.output_queue.get(timeout=0.25)
+                self.out_stream.write(audio)
+            except Exception:
+                pass
 
-    def _find_usb_device(self, is_input=True):
+    def _in_callback(self, in_data, frame_count, time_info, status):
+        """PyAudio callback — forward mic data to ElevenLabs SDK."""
+        if self.input_callback:
+            self.input_callback(in_data)
+        return (None, self._pyaudio_module.paContinue)
+
+    def _find_usb_device(self):
         """Find the USB audio device index for PyAudio."""
-        if not self._pa:
-            return None
-
-        for i in range(self._pa.get_device_count()):
-            info = self._pa.get_device_info_by_index(i)
-            name_lower = info["name"].lower()
-            if is_input and info["maxInputChannels"] > 0:
-                if "usb" in name_lower:
-                    return i
-            elif not is_input and info["maxOutputChannels"] > 0:
-                if "usb" in name_lower:
-                    return i
-
-        # Fallback to default
-        logger.warning(
-            "HandsetAudio: USB %s device not found, using default",
-            "input" if is_input else "output",
-        )
+        for i in range(self.p.get_device_count()):
+            info = self.p.get_device_info_by_index(i)
+            if "usb" in info["name"].lower() and info["maxInputChannels"] > 0:
+                return i
+        logger.warning("HandsetAudio: USB device not found, using default")
         return None
 
 
@@ -313,33 +265,43 @@ class ConversationalEngine:
             return None
 
         try:
-            # Build tool configs for the agent
-            tools = []
-            for tool_def in AGENT_TOOL_DEFINITIONS:
-                tools.append({
-                    "type": "client",
-                    "name": tool_def["name"],
-                    "description": tool_def["description"],
-                    "parameters": tool_def["parameters"],
-                })
+            from elevenlabs import ConversationalConfig
+            from elevenlabs.types import (
+                AgentPlatformSettingsRequestModel,
+                ConversationInitiationClientDataConfigInput,
+                ConversationConfigClientOverrideConfigInput,
+                AgentConfigOverrideConfig,
+                PromptAgentApiModelOverrideConfig,
+            )
 
+            # Create agent with overrides ENABLED so we can switch prompt/first_message per decade
             agent = self.client.conversational_ai.agents.create(
                 name="RetroRadio DJ",
-                conversation_config={
-                    "tts": {
-                        "voice_id": "JBFqnCBsd6RMkjVDRZzb",  # Default (George)
-                        "model_id": "eleven_flash_v2_5",
+                conversation_config=ConversationalConfig(
+                    tts={
+                        "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+                        "model_id": "eleven_flash_v2",
                     },
-                    "agent": {
+                    agent={
                         "prompt": {
-                            "prompt": "You are a retro radio DJ. Greet the listener warmly.",
+                            "prompt": "You are a retro radio DJ. Greet the listener warmly and ask what they want to hear.",
                             "llm": "gpt-4o",
                         },
                         "first_message": "Welcome to RetroRadio!",
                         "language": "en",
                     },
-                },
-                tools=tools,
+                ),
+                platform_settings=AgentPlatformSettingsRequestModel(
+                    overrides=ConversationInitiationClientDataConfigInput(
+                        conversation_config_override=ConversationConfigClientOverrideConfigInput(
+                            agent=AgentConfigOverrideConfig(
+                                prompt=PromptAgentApiModelOverrideConfig(prompt=True),
+                                first_message=True,
+                                language=True,
+                            ),
+                        ),
+                    ),
+                ),
             )
 
             self.agent_id = agent.agent_id
@@ -393,8 +355,10 @@ class ConversationalEngine:
         self._session_language = language
 
         try:
-            # Create audio interface
-            self._audio_interface = HandsetAudioInterface()
+            # Use DefaultAudioInterface — ALSA .asoundrc routes default to USB card
+            # with plug layer handling 16kHz<->44100Hz resampling automatically
+            from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
+            self._audio_interface = DefaultAudioInterface()
 
             # Register client-side tools
             client_tools = ClientTools()
@@ -419,32 +383,35 @@ class ConversationalEngine:
             else:
                 first_message = f"You're tuned in to {year}! What can I spin for you?"
 
-            # Build per-session overrides
-            overrides = {
-                "agent": {
-                    "prompt": {
-                        "prompt": system_instructions,
-                    },
-                    "first_message": first_message,
-                    "language": lang_code,
-                },
-                "tts": {
-                    "voice_id": voice_id,
-                },
-            }
+            # Per-session overrides: prompt + first_message + language
+            # NOTE: voice_id override is NOT allowed by agent config, so we skip it
+            from elevenlabs.conversational_ai.conversation import ConversationInitiationData
 
-            # Create the Conversation instance
+            config = ConversationInitiationData(
+                conversation_config_override={
+                    "agent": {
+                        "prompt": {
+                            "prompt": system_instructions,
+                        },
+                        "first_message": first_message,
+                        "language": lang_code,
+                    },
+                }
+            )
+
             self.conversation = Conversation(
                 client=self.client,
                 agent_id=agent_id,
+                requires_auth=False,
                 audio_interface=self._audio_interface,
+                config=config,
                 client_tools=client_tools,
                 callback_agent_response=self._on_agent_response,
                 callback_user_transcript=self._on_user_transcript,
             )
 
             # Start the session (NON-BLOCKING -- runs in background)
-            self.conversation.start_session(overrides=overrides)
+            self.conversation.start_session()
 
             logger.info(
                 "Conversational session started: year=%s, voice=%s",
