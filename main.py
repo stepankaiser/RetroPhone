@@ -153,11 +153,17 @@ def _run_conversational_session(year, language):
         led.on_air_flash()
 
         # Wait for hangup — poll GPIO directly (phone_interface thread may be starved by ConvAI)
+        # Also enforce idle timeout to prevent runaway billing
         import RPi.GPIO as GPIO
+        CONVAI_MAX_DURATION = 300  # 5 minutes max per session
+        session_start = time.time()
         while conv_engine.is_active():
             hook_val = GPIO.input(22)  # 1 = on hook, 0 = off hook
             if hook_val == 1:
                 print("   (ConvAI: Hook-down detected via direct GPIO)")
+                break
+            if time.time() - session_start > CONVAI_MAX_DURATION:
+                print("   (ConvAI: Max session duration reached, ending)")
                 break
             time.sleep(0.2)
 
@@ -274,12 +280,17 @@ def on_dial_complete(number):
                 # year=None so Operator doesn't era-filter Spotify searches
                 if conv_engine.start_session(None, current_language, op_voice['id'], op_instructions):
                     led.on_air_flash()
-                    # Poll hook directly via GPIO (phone_interface thread may be starved by ConvAI)
+                    # Poll hook directly + timeout to prevent runaway billing
                     import RPi.GPIO as GPIO
+                    CONVAI_MAX_DURATION = 300  # 5 min max
+                    session_start = time.time()
                     while conv_engine.is_active():
-                        hook_val = GPIO.input(22)  # 1 = on hook, 0 = off hook
-                        if hook_val == 1:  # Handset replaced
+                        hook_val = GPIO.input(22)
+                        if hook_val == 1:
                             print("   (ConvAI: Hook-down detected via direct GPIO)")
+                            break
+                        if time.time() - session_start > CONVAI_MAX_DURATION:
+                            print("   (ConvAI: Max session duration reached)")
                             break
                         time.sleep(0.2)
                     conv_engine.end_session()
