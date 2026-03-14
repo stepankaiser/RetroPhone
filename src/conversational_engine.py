@@ -352,11 +352,12 @@ class ConversationalEngine:
                 ConversationConfigClientOverrideConfigInput,
                 AgentConfigOverrideConfig,
                 PromptAgentApiModelOverrideConfig,
+                TtsConversationalConfigOverrideConfig,
             )
 
             # Create agent with:
-            # 1. Spotify tool definitions (so LLM knows it can call them)
-            # 2. Override permissions (so we can swap prompt/first_message per decade)
+            # 1. Spotify + world tools (so LLM knows it can call them)
+            # 2. Override permissions for prompt, first_message, language, AND voice_id
             agent = self.client.conversational_ai.agents.create(
                 name="RetroRadio DJ v3",
                 conversation_config=ConversationalConfig(
@@ -381,6 +382,9 @@ class ConversationalEngine:
                                 prompt=PromptAgentApiModelOverrideConfig(prompt=True),
                                 first_message=True,
                                 language=True,
+                            ),
+                            tts=TtsConversationalConfigOverrideConfig(
+                                voice_id=True,
                             ),
                         ),
                     ),
@@ -466,8 +470,7 @@ class ConversationalEngine:
             else:
                 first_message = f"You're tuned in to {year}! What can I spin for you?"
 
-            # Per-session overrides: prompt + first_message + language
-            # NOTE: voice_id override is NOT allowed by agent config, so we skip it
+            # Per-session overrides: prompt + first_message + language + voice
             from elevenlabs.conversational_ai.conversation import ConversationInitiationData
 
             config = ConversationInitiationData(
@@ -478,6 +481,9 @@ class ConversationalEngine:
                         },
                         "first_message": first_message,
                         "language": lang_code,
+                    },
+                    "tts": {
+                        "voice_id": voice_id,
                     },
                 }
             )
