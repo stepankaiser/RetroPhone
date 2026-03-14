@@ -91,6 +91,29 @@ AGENT_TOOLS_CONFIG = [
     },
     {
         "type": "client",
+        "name": "search_spotify",
+        "description": "Search Spotify WITHOUT playing. Returns a list of results so you can discuss options with the listener before playing. Use when the user wants to browse, explore, or choose from options. Example: 'What albums does Bruce Springsteen have?' or 'Find me some jazz playlists'.",
+        "expects_response": True,
+        "response_timeout_secs": 10,
+        "parameters": {
+            "type": "object",
+            "description": "Spotify search parameters",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for"
+                },
+                "search_type": {
+                    "type": "string",
+                    "description": "Type of search",
+                    "enum": ["track", "artist", "album", "playlist"]
+                }
+            },
+            "required": ["query", "search_type"]
+        }
+    },
+    {
+        "type": "client",
         "name": "now_playing",
         "description": "Get information about what's currently playing on Spotify. Use when user asks 'what's playing?', 'who is this?', 'what song is this?'.",
         "expects_response": True,
@@ -557,6 +580,38 @@ class ConversationalEngine:
                         self.music_engine.play_playlist(uri)
                     return f"Playing the {decade}s radio playlist. Music is coming through the speakers."
                 return "Could not find a playlist for this era."
+
+            elif tool_name == "search_spotify":
+                query = parameters.get("query", "")
+                search_type = parameters.get("search_type", "track")
+                print(f"🎙️ Spotify SEARCH: '{query}' as {search_type}")
+                try:
+                    results = self.music_engine.sp.search(q=query, limit=5, type=search_type)
+                    key_map = {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}
+                    items = results.get(key_map.get(search_type, "tracks"), {}).get("items", [])
+                    if not items:
+                        return f"No {search_type}s found for '{query}'."
+
+                    result_lines = []
+                    for i, item in enumerate(items[:5], 1):
+                        name = item.get("name", "?")
+                        if search_type == "track":
+                            artist = item["artists"][0]["name"] if item.get("artists") else "?"
+                            result_lines.append(f"{i}. {name} by {artist}")
+                        elif search_type == "album":
+                            artist = item["artists"][0]["name"] if item.get("artists") else "?"
+                            year = item.get("release_date", "?")[:4]
+                            result_lines.append(f"{i}. {name} by {artist} ({year})")
+                        elif search_type == "artist":
+                            genres = ", ".join(item.get("genres", [])[:2]) or "various"
+                            result_lines.append(f"{i}. {name} ({genres})")
+                        else:
+                            owner = item.get("owner", {}).get("display_name", "?")
+                            result_lines.append(f"{i}. {name} by {owner}")
+
+                    return f"Found {len(items)} {search_type}s: " + "; ".join(result_lines) + ". Which one would you like to hear?"
+                except Exception as e:
+                    return f"Search error: {e}"
 
             elif tool_name == "pause_music":
                 self.music_engine.pause()
