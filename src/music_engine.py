@@ -239,11 +239,8 @@ class MusicEngine:
                         'duration_ms': playback['item']['duration_ms'],
                     }
 
-                    # Fetch audio features for DJ commentary (only on track change)
-                    if last_track_id and new_id != last_track_id:
-                        features = self.get_track_features(new_id)
-                        if features:
-                            self.current_track.update(features)
+                    # Note: audio_features API returns 403 (deprecated by Spotify)
+                    # Skip fetching to avoid log spam
 
                     # Detect song change
                     if last_track_id and new_id != last_track_id and self.on_track_change:
