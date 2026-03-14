@@ -54,9 +54,15 @@ class MusicEngine:
             cmd = [
                 "/usr/bin/librespot",
                 "--name", device_name,
-                "--device", "plughw:0,0", # Exclusive hardware access (Most reliable for Pi Headphone Jack)
+                "--device", "plughw:0,0",
                 "--backend", "alsa",
                 "--bitrate", "320",
+                "--format", "S16",              # 16-bit (Pi 3 headphone jack is PWM, higher won't help)
+                "--dither", "tpdf_hp",           # Best dithering algorithm (reduces quantization noise)
+                "--enable-volume-normalisation",  # Consistent volume across tracks (real radio feel)
+                "--normalisation-method", "dynamic",
+                "--normalisation-gain-type", "auto",
+                "--normalisation-pregain", "3",   # Slight boost for speaker output
                 "--cache", cache_dir,
                 "--initial-volume", "90",
                 "--zeroconf-port", "5555"
