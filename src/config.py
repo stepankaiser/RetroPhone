@@ -7,8 +7,8 @@ FEATURE_FLAGS = {
     "streaming_tts": True,          # Stream ElevenLabs TTS directly to player
     "callin_greeting": True,        # DJ greets caller when handset lifted during music
     "playback_monitor": True,       # Background thread monitoring Spotify playback
-    "dj_breaks": True,              # Proactive DJ commentary between songs
-    "show_mode": True,              # Full radio show orchestration
+    "dj_breaks": False,             # Proactive DJ commentary between songs (wife asked to disable)
+    "show_mode": False,             # Full radio show orchestration (bells/jingles disabled)
     "conversational_ai": True,      # ElevenLabs Conversational AI (default ON)
     "legacy_mode": False,           # Force legacy listen->classify->speak pipeline
     "persistent_prefs": True,       # Remember user preferences across sessions

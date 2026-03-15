@@ -153,6 +153,24 @@ AGENT_TOOLS_CONFIG = [
     },
     {
         "type": "client",
+        "name": "queue_song",
+        "description": "Add a song to the playback queue WITHOUT interrupting what's currently playing. Use when the user wants to queue a song for later, or asks to play multiple songs in a row (queue the second, third, etc. songs). Example: 'play X and then Y' — play X with play_music, then queue Y with queue_song.",
+        "expects_response": True,
+        "response_timeout_secs": 10,
+        "parameters": {
+            "type": "object",
+            "description": "Song to add to queue",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Song name and artist to search for"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "type": "client",
         "name": "search_spotify",
         "description": "Search Spotify WITHOUT playing. Returns a list of results so you can discuss options with the listener before playing. Use when the user wants to browse, explore, or choose from options. Example: 'What albums does Bruce Springsteen have?' or 'Find me some jazz playlists'.",
         "expects_response": True,
@@ -652,6 +670,23 @@ class ConversationalEngine:
                         self.music_engine.play_playlist(uri)
                     return f"Playing the {decade}s radio playlist. Music is coming through the speakers."
                 return "Could not find a playlist for this era."
+
+            elif tool_name == "queue_song":
+                query = parameters.get("query", "")
+                print(f"🎙️ Spotify QUEUE: '{query}'")
+                try:
+                    results = self.music_engine.sp.search(q=query, limit=1, type="track")
+                    tracks = results.get("tracks", {}).get("items", [])
+                    if tracks:
+                        track = tracks[0]
+                        track_uri = track["uri"]
+                        track_name = track["name"]
+                        artist_name = track["artists"][0]["name"]
+                        self.music_engine.sp.add_to_queue(uri=track_uri, device_id=self.music_engine.device_id)
+                        return f"Queued: {track_name} by {artist_name}. It will play after the current song."
+                    return f"Could not find '{query}' to queue."
+                except Exception as e:
+                    return f"Queue error: {e}"
 
             elif tool_name == "search_spotify":
                 query = parameters.get("query", "")
