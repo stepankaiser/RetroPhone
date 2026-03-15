@@ -389,38 +389,22 @@ class MusicEngine:
                 if type == 'playlist' or type == 'album' or type == 'artist':
                     self.sp.start_playback(device_id=self.device_id, context_uri=uri)
                 elif type == 'track':
-                    # SMART RADIO: Build queue from related artists (not just same artist)
+                    # Play the requested track first, then queue artist's top tracks
                     try:
                         track_info = results['tracks']['items'][0]
                         artist_id = track_info['artists'][0]['id']
                         artist_name = track_info['artists'][0]['name']
-                        print(f"   (Building Smart Radio from {artist_name} + related artists...)")
+                        print(f"   (Building queue from {artist_name} top tracks...)")
 
-                        # Start with this artist's top tracks
                         top = self.sp.artist_top_tracks(artist_id)
-                        queue_uris = [uri]  # Requested track first
-                        queue_uris += [t['uri'] for t in top['tracks'] if t['uri'] != uri][:5]
-
-                        # Add tracks from related artists for variety
-                        try:
-                            related = self.sp.artist_related_artists(artist_id)
-                            for rel_artist in related['artists'][:4]:
-                                rel_top = self.sp.artist_top_tracks(rel_artist['id'])
-                                rel_uris = [t['uri'] for t in rel_top['tracks'][:3]]
-                                queue_uris.extend(rel_uris)
-                        except Exception as e:
-                            print(f"   (Related artists failed: {e})")
-
-                        # Shuffle everything after the first track
-                        first = queue_uris[0]
-                        rest = queue_uris[1:]
-                        random.shuffle(rest)
-                        full_queue = [first] + rest[:19]  # Max 20 tracks
+                        top_uris = [t['uri'] for t in top['tracks'] if t['uri'] != uri]
+                        random.shuffle(top_uris)
+                        full_queue = [uri] + top_uris[:15]
 
                         self.sp.start_playback(device_id=self.device_id, uris=full_queue)
-                        print(f"   (Smart Radio: {len(full_queue)} tracks queued)")
+                        print(f"   (Queued {len(full_queue)} tracks, requested song first)")
                     except Exception as e:
-                        print(f"   (Smart Radio Failed: {e}. Playing single track.)")
+                        print(f"   (Queue build failed: {e}. Playing single track.)")
                         self.sp.start_playback(device_id=self.device_id, uris=[uri])
                 else:
                     self.sp.start_playback(device_id=self.device_id, uris=[uri])

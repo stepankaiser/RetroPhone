@@ -184,6 +184,12 @@ class ShowEngine:
         """Ring the bell to get the user's attention for a special segment."""
         if not self.is_active:
             return
+        # Quiet hours: no bell between 22:00 and 08:00
+        from datetime import datetime
+        hour = datetime.now().hour
+        if hour >= 22 or hour < 8:
+            self._schedule_bell()  # Try again later
+            return
         # Only ring if handset is on hook
         if self.phone and self.phone.is_off_hook:
             # Reschedule for later
