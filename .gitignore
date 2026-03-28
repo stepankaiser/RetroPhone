@@ -1,6 +1,8 @@
-
-# Environment Variables (Secrets)
+# Secrets
 .env
+credentials.json
+
+# macOS
 .DS_Store
 
 # Python
@@ -10,11 +12,30 @@ __pycache__/
 venv/
 env/
 
-# Spotify Cache
+# Spotify
+.cache
 .spotify_device_id
 .spotify_token_cache
 spotify_cache/
 
+# ElevenLabs
+.retro_agent_id
+
 # Logs
 *.log
 debug_log_*.txt
+
+# User data
+user_prefs.json
+chat_history/
+
+# Test scripts
+retro_test.py
+retro_era_test.py
+retro_convai_test.py
+retro_full_test.py
+full_test_v3.py
+test_led*.py
+test_gpio.py
+add_voices.py
+check_classical.py
