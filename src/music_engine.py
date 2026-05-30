@@ -26,6 +26,7 @@ class MusicEngine:
         self._monitor_thread = None
         self._monitor_running = False
         self.current_track = None      # {id, name, artist, progress_ms, duration_ms}
+        self.last_play_label = None    # human label of the most recent search_and_play selection
         self.on_track_change = None    # callback: fn(old_track, new_track)
 
     def start_embedded_player(self):
@@ -370,19 +371,26 @@ class MusicEngine:
                 print("❌ Search returned no results.")
                 return False
 
-            uri = None
-            if type == 'playlist':
-                 try: uri = results['playlists']['items'][0]['uri']
-                 except (KeyError, IndexError) as e: print(f"   (Playlist parse: {e})")
-            elif type == 'track':
-                 try: uri = results['tracks']['items'][0]['uri']
-                 except (KeyError, IndexError) as e: print(f"   (Track parse: {e})")
-            elif type == 'album':
-                 try: uri = results['albums']['items'][0]['uri']
-                 except (KeyError, IndexError) as e: print(f"   (Album parse: {e})")
-            elif type == 'artist':
-                 try: uri = results['artists']['items'][0]['uri']
-                 except (KeyError, IndexError) as e: print(f"   (Artist parse: {e})")
+            # Spotify pads search results with None entries — pick the first real item.
+            key_map = {'playlist': 'playlists', 'track': 'tracks', 'album': 'albums', 'artist': 'artists'}
+            items = (results.get(key_map.get(type, type + 's')) or {}).get('items') or []
+            item = next((it for it in items if it), None)
+            uri = item.get('uri') if item else None
+            if uri is None:
+                print(f"   ({type} parse: no usable item in results)")
+            else:
+                # Accurate "now playing" label from what we actually selected — the 3s
+                # monitor cache is too stale to name the song for an immediate confirmation.
+                if type == 'track':
+                    a = item['artists'][0]['name'] if item.get('artists') else 'unknown'
+                    self.last_play_label = f"{item.get('name', 'this track')} by {a}"
+                elif type == 'artist':
+                    self.last_play_label = f"songs by {item.get('name', 'this artist')}"
+                elif type == 'album':
+                    a = item['artists'][0]['name'] if item.get('artists') else 'unknown'
+                    self.last_play_label = f"the album {item.get('name', '')} by {a}".strip()
+                else:
+                    self.last_play_label = f"the {item.get('name', 'radio')} playlist"
 
             if uri:
                 self.set_volume(100) # This might fail if device is dead
@@ -392,7 +400,7 @@ class MusicEngine:
                 elif type == 'track':
                     # Play the requested track first, then queue artist's top tracks
                     try:
-                        track_info = results['tracks']['items'][0]
+                        track_info = item
                         artist_id = track_info['artists'][0]['id']
                         artist_name = track_info['artists'][0]['name']
                         print(f"   (Building queue from {artist_name} top tracks...)")
@@ -427,7 +435,8 @@ class MusicEngine:
         key_map = {'playlist': 'playlists', 'track': 'tracks', 'album': 'albums', 'artist': 'artists'}
         key = key_map.get(type, type + 's')
         try:
-            return bool(results.get(key, {}).get('items'))
+            items = (results.get(key) or {}).get('items') or []
+            return any(it for it in items)  # ignore None-padded entries
         except Exception:
             return False
 

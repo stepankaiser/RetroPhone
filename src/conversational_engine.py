@@ -655,12 +655,10 @@ class ConversationalEngine:
                 success = self.music_engine.search_and_play(query, type=search_type, year=year)
 
                 if success:
-                    # Get track info to feed back to the DJ
-                    time.sleep(1)
-                    track = self.music_engine.current_track
-                    if track:
-                        return f"Now playing: {track.get('name', query)} by {track.get('artist', 'unknown')}. Music is coming through the speakers."
-                    return f"Now playing: {query}. Music is coming through the speakers."
+                    # Use the label search_and_play just selected — the 3s monitor
+                    # cache is too stale to name the song right after playback starts.
+                    label = getattr(self.music_engine, "last_play_label", None) or query
+                    return f"Now playing: {label}. Music is coming through the speakers."
                 else:
                     return f"Could not find '{query}' on Spotify. Try a different search."
 
@@ -703,7 +701,8 @@ class ConversationalEngine:
                 try:
                     results = self.music_engine.sp.search(q=query, limit=5, type=search_type)
                     key_map = {"track": "tracks", "artist": "artists", "album": "albums", "playlist": "playlists"}
-                    items = results.get(key_map.get(search_type, "tracks"), {}).get("items", [])
+                    items = results.get(key_map.get(search_type, "tracks"), {}).get("items", []) or []
+                    items = [it for it in items if it]  # Spotify pads results with None
                     if not items:
                         return f"No {search_type}s found for '{query}'."
 
@@ -751,9 +750,11 @@ class ConversationalEngine:
                 try:
                     self.music_engine.sp.next_track(device_id=self.music_engine.device_id)
                     time.sleep(1)
-                    track = self.music_engine.current_track
-                    if track:
-                        return f"Skipped! Now playing: {track.get('name', '?')} by {track.get('artist', '?')}."
+                    playback = self.music_engine.sp.current_playback()
+                    if playback and playback.get("item"):
+                        item = playback["item"]
+                        artist = item["artists"][0]["name"] if item.get("artists") else "?"
+                        return f"Skipped! Now playing: {item.get('name', '?')} by {artist}."
                     return "Skipped to the next track."
                 except Exception as e:
                     return f"Could not skip: {e}"
