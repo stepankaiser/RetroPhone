@@ -443,12 +443,15 @@ class ConversationalEngine:
                 conversation_config=ConversationalConfig(
                     tts={
                         "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+                        # Keep flash_v2 (NOT _v2_5): EL rejects v2.5 TTS for English-base
+                        # agents ("English Agents must use turbo or flash v2"). flash_v2 is
+                        # the lowest-latency model allowed and already handles CZ overrides.
                         "model_id": "eleven_flash_v2",
                     },
                     agent={
                         "prompt": {
                             "prompt": "You are a radio DJ. Help the listener find music to play.",
-                            "llm": "gpt-4o",
+                            "llm": "gpt-5.5",  # was gpt-4o; live agent updated to match (May 2026)
                             "tools": AGENT_TOOLS_CONFIG,
                         },
                         "first_message": "Welcome to RetroRadio!",
