@@ -64,6 +64,7 @@ class MusicEngine:
                 "--normalisation-gain-type", "auto",
                 "--normalisation-pregain", "3",   # Slight boost for speaker output
                 "--cache", cache_dir,
+                "--cache-size-limit", "2G",      # Bound audio cache (unbounded growth filled the 15GB SD card)
                 "--initial-volume", "90",
                 "--zeroconf-port", "5555"
             ]
