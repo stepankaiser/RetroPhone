@@ -457,6 +457,11 @@ class ConversationalEngine:
                         "first_message": "Welcome to RetroRadio!",
                         "language": "en",
                     },
+                    # Enable Czech as an additional language (dial-9 CZ mode). EL then
+                    # uses the multilingual v2.5 TTS for 'cs' while English stays on v2,
+                    # giving proper Czech pronunciation. Empty overrides => inherit base;
+                    # start_session() already supplies the CZ first_message + decade voice.
+                    language_presets={"cs": {"overrides": {}}},
                 ),
                 platform_settings=AgentPlatformSettingsRequestModel(
                     overrides=ConversationInitiationClientDataConfigInput(
