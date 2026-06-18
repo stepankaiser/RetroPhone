@@ -55,7 +55,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "your_openai_key_here")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "your_elevenlabs_key_here")
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "your_spotify_client_id")
 SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "your_spotify_client_secret")
-SPOTIPY_REDIRECT_URI = "http://localhost:8888/callback"
+SPOTIPY_REDIRECT_URI = "http://127.0.0.1:8888/callback"  # Spotify banned 'localhost' redirects (loopback IP required since 2025-11-27)
 
 # ============================================================
 # DJ NAMES — Each decade has a named personality (EN + CZ)

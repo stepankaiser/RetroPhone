@@ -27,6 +27,7 @@ class MusicEngine:
         self._monitor_running = False
         self.current_track = None      # {id, name, artist, progress_ms, duration_ms}
         self.last_play_label = None    # human label of the most recent search_and_play selection
+        self.needs_reauth = False      # set True when the Spotify refresh token has expired
         self.on_track_change = None    # callback: fn(old_track, new_track)
 
     def start_embedded_player(self):
@@ -206,6 +207,34 @@ class MusicEngine:
             return True
         return False
 
+    def _check_auth_error(self, e):
+        """Detect an expired/invalid Spotify refresh token (6-month expiry policy).
+
+        Spotify's guidance is to DISCARD the token and re-authorize — never retry.
+        On first detection we stop the monitor (so we don't hammer the API with a
+        dead token), move the cache aside, and print loud recovery instructions.
+        Returns True if this is a fatal auth error.
+        """
+        if "invalid_grant" not in str(e).lower():
+            return False
+        if not self.needs_reauth:
+            self.needs_reauth = True
+            self._monitor_running = False  # stop polling with a dead token
+            cache = os.path.expanduser("~/RetroPhone/.cache")
+            try:
+                if os.path.exists(cache):
+                    os.replace(cache, cache + ".expired")  # discard per Spotify guidance
+            except Exception as ex:
+                print(f"   (Could not move expired cache: {ex})")
+            print("=" * 64)
+            print("🔑 SPOTIFY RE-AUTHORIZATION REQUIRED — refresh token expired.")
+            print("   Music control is DOWN until you re-authorize.")
+            print("   Recover: run  tools/reauth_local.py  on a machine with a browser,")
+            print("   then:  scp .cache.new pi@radio.local:~/RetroPhone/.cache")
+            print("          sudo systemctl restart retrophone")
+            print("=" * 64)
+        return True
+
     def start_monitor(self):
         """Start background thread monitoring Spotify playback for song transitions."""
         if not FEATURE_FLAGS.get("playback_monitor"):
@@ -267,6 +296,8 @@ class MusicEngine:
                 elif not playback or not playback.get('is_playing'):
                     self.is_playing = False
             except Exception as e:
+                if self._check_auth_error(e):
+                    break
                 print(f"   (Monitor poll error: {e})")
 
             time.sleep(3)
@@ -425,6 +456,8 @@ class MusicEngine:
                 print("❌ No music found.")
                 return False
         except Exception as e:
+            if self._check_auth_error(e):
+                return False
             print(f"❌ Search/Play Error: {e}")
             if retry and self._handle_playback_error(e):
                 return self.search_and_play(query, type=type, retry=False)

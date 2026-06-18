@@ -14,6 +14,8 @@ env/
 
 # Spotify
 .cache
+.cache.new
+.cache.expired
 .spotify_device_id
 .spotify_token_cache
 spotify_cache/
