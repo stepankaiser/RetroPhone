@@ -441,6 +441,10 @@ class ConversationalEngine:
             agent = self.client.conversational_ai.agents.create(
                 name="RetroRadio DJ v3",
                 conversation_config=ConversationalConfig(
+                    # Scribe v2.2 Realtime ASR. EL retired "Original ASR" (provider
+                    # "elevenlabs") on 2026-07-08; scribe_realtime is more accurate per
+                    # language (notably better Czech) and enables the Turn v3 model.
+                    asr={"provider": "scribe_realtime", "quality": "high"},
                     tts={
                         "voice_id": "JBFqnCBsd6RMkjVDRZzb",
                         # Keep flash_v2 (NOT _v2_5): EL rejects v2.5 TTS for English-base
